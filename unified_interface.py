@@ -409,7 +409,7 @@ class UnifiedEdaxShifu:
 • Detection: {', '.join(active_detection) if active_detection else 'None'}
 • Triggers: {', '.join(active_triggers) if active_triggers else 'None'}
 • Known classes: {len(classes)}
-• Total samples: {len(self.system.knn.X_train) if self.system.knn.X_train is not None else 0}
+• Total samples: {getattr(self.system.knn, '_actual_size', 0)}
 • Captures: {self.stats['captures']}
 • Taught: {self.stats['taught']}
 • AI annotations: {self.stats['ai_annotations']}

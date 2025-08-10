@@ -397,9 +397,9 @@ class IntelligentCaptureSystem:
 
     def _reload_model_callback(self):
         """Callback for model reloading."""
-        old_count = len(self.knn.X_train) if self.knn.X_train is not None else 0
+        old_count = getattr(self.knn, '_actual_size', 0)
         self.knn.load_model()
-        new_count = len(self.knn.X_train) if self.knn.X_train is not None else 0
+        new_count = getattr(self.knn, '_actual_size', 0)
         
         if new_count > old_count:
             self.stats['knn_updates'] += 1
@@ -422,9 +422,9 @@ class IntelligentCaptureSystem:
         """Reload the KNN model to get latest annotations."""
         try:
             if os.path.exists(self.knn.model_path):
-                old_count = len(self.knn.X_train) if self.knn.X_train is not None else 0
+                old_count = getattr(self.knn, '_actual_size', 0)
                 self.knn.load_model()
-                new_count = len(self.knn.X_train) if self.knn.X_train is not None else 0
+                new_count = getattr(self.knn, '_actual_size', 0)
                 if new_count > old_count:
                     logger.info(f"🔄 Reloaded KNN model: {new_count} samples ({new_count - old_count} new)")
                     return True

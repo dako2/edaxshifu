@@ -68,9 +68,11 @@ class KNNObjectClassifier:
         
         # Initialize KNN
         self.knn = KNeighborsClassifier(n_neighbors=n_neighbors, metric='cosine')
-        # Use numpy arrays from the start for efficiency
+        initial_size = 100
         self.X_train = np.empty((0, self.embedding_dim), dtype=np.float32)
         self.y_train = np.array([], dtype=object)
+        self._capacity = initial_size
+        self._actual_size = 0
         self.trained = False
         
         # Thread safety
@@ -139,7 +141,7 @@ class KNNObjectClassifier:
     
     def add_sample(self, image: np.ndarray, label: str, retrain: bool = True):
         """
-        Add a training sample to the classifier with memory management.
+        Add a training sample to the classifier with optimized memory management.
         
         Args:
             image: Image as numpy array
@@ -149,27 +151,47 @@ class KNNObjectClassifier:
         with self._lock:
             embedding = self.extract_embedding(image)
             
-            # Add new sample using numpy concatenation
-            self.X_train = np.vstack([self.X_train, embedding.reshape(1, -1)])
-            self.y_train = np.append(self.y_train, label)
+            if self._actual_size >= len(self.X_train):
+                new_size = max(self._capacity, self._actual_size * 2) if self._actual_size > 0 else self._capacity
+                
+                new_X = np.empty((new_size, self.embedding_dim), dtype=np.float32)
+                if self._actual_size > 0:
+                    new_X[:self._actual_size] = self.X_train[:self._actual_size]
+                self.X_train = new_X
+                
+                new_y = np.empty(new_size, dtype=object)
+                if self._actual_size > 0:
+                    new_y[:self._actual_size] = self.y_train[:self._actual_size]
+                self.y_train = new_y
+                
+                self._capacity = new_size
+            
+            # Add new sample efficiently
+            self.X_train[self._actual_size] = embedding
+            self.y_train[self._actual_size] = label
+            self._actual_size += 1
             
             # Memory management: limit samples per class
             self._manage_memory()
             
             # Retrain KNN if requested and we have enough samples
-            if retrain and len(self.X_train) >= self.n_neighbors:
+            if retrain and self._actual_size >= self.n_neighbors:
                 self._retrain_knn()
                 
-            logger.info(f"Added sample for '{label}'. Total samples: {len(self.X_train)}")
+            logger.info(f"Added sample for '{label}'. Total samples: {self._actual_size}")
     
     def _manage_memory(self):
         """Manage memory by limiting samples per class."""
-        unique_labels, counts = np.unique(self.y_train, return_counts=True)
+        if self._actual_size == 0:
+            return
+            
+        active_y = self.y_train[:self._actual_size]
+        unique_labels, counts = np.unique(active_y, return_counts=True)
         
         for label, count in zip(unique_labels, counts):
             if count > self.max_samples_per_class:
                 # Keep only the most recent samples
-                label_mask = self.y_train == label
+                label_mask = active_y == label
                 label_indices = np.where(label_mask)[0]
                 
                 # Keep the last max_samples_per_class samples
@@ -177,27 +199,37 @@ class KNNObjectClassifier:
                 remove_indices = label_indices[:-self.max_samples_per_class]
                 
                 # Create mask for samples to keep
-                keep_mask = np.ones(len(self.y_train), dtype=bool)
+                keep_mask = np.ones(self._actual_size, dtype=bool)
                 keep_mask[remove_indices] = False
                 
-                # Update arrays
-                self.X_train = self.X_train[keep_mask]
-                self.y_train = self.y_train[keep_mask]
+                active_X = self.X_train[:self._actual_size]
+                X_filtered = active_X[keep_mask]
+                y_filtered = active_y[keep_mask]
+                
+                self.X_train[:len(X_filtered)] = X_filtered
+                self.y_train[:len(y_filtered)] = y_filtered
+                self._actual_size = len(X_filtered)
                 
                 logger.debug(f"Pruned {len(remove_indices)} old samples for class '{label}'")
     
     def _retrain_knn(self):
         """Retrain the KNN model with current samples."""
+        if self._actual_size == 0:
+            return
+            
+        X_data = self.X_train[:self._actual_size]
+        y_data = self.y_train[:self._actual_size]
+        
         # Use min of n_neighbors and number of unique samples
-        unique_labels = np.unique(self.y_train)
-        actual_neighbors = min(self.n_neighbors, len(self.X_train), len(unique_labels))
+        unique_labels = np.unique(y_data)
+        actual_neighbors = min(self.n_neighbors, self._actual_size, len(unique_labels))
         
         self.knn = KNeighborsClassifier(
             n_neighbors=actual_neighbors,
             metric='cosine',  # Use cosine similarity for normalized embeddings
             algorithm='brute'  # More stable for high-dimensional data
         )
-        self.knn.fit(self.X_train, self.y_train)
+        self.knn.fit(X_data, y_data)
         self.trained = True
             
     def add_samples_from_directory(self, directory: str):
@@ -267,7 +299,7 @@ class KNNObjectClassifier:
             Recognition result with label, confidence, and scores
         """
         with self._lock:
-            if not self.trained or len(self.X_train) == 0:
+            if not self.trained or self._actual_size == 0:
                 return Recognition(
                     label="unknown",
                     confidence=0.0,
@@ -282,11 +314,12 @@ class KNNObjectClassifier:
             # Get k nearest neighbors and distances
             distances, indices = self.knn.kneighbors(
                 embedding.reshape(1, -1), 
-                n_neighbors=min(self.n_neighbors, len(self.X_train))
+                n_neighbors=min(self.n_neighbors, self._actual_size)
             )
             
             # Get labels of nearest neighbors
-            neighbor_labels = self.y_train[indices[0]]
+            y_data = self.y_train[:self._actual_size]
+            neighbor_labels = y_data[indices[0]]
             neighbor_distances = distances[0]
             
             # Calculate weighted voting based on distance
@@ -294,7 +327,7 @@ class KNNObjectClassifier:
             similarities = 1 - neighbor_distances
             
             # Calculate scores for each class
-            unique_labels = np.unique(self.y_train)
+            unique_labels = np.unique(y_data)
             all_scores = {}
             
             for label in unique_labels:
@@ -307,7 +340,7 @@ class KNNObjectClassifier:
             
             # Get prediction and confidence
             if all_scores:
-                pred_label = max(all_scores, key=all_scores.get)
+                pred_label = max(all_scores.keys(), key=lambda k: all_scores[k])
                 confidence = all_scores[pred_label]
                 
                 # Additional confidence adjustment based on distance to nearest neighbor
@@ -331,14 +364,16 @@ class KNNObjectClassifier:
         
     def get_known_classes(self) -> List[str]:
         """Get list of known class labels."""
-        if self.trained:
-            return list(self.knn.classes_)
+        if self.trained and self._actual_size > 0:
+            return list(np.unique(self.y_train[:self._actual_size]))
         return []
         
     def get_sample_count(self) -> Dict[str, int]:
         """Get count of samples per class."""
+        if self._actual_size == 0:
+            return {}
         counts = {}
-        for label in self.y_train:
+        for label in self.y_train[:self._actual_size]:
             counts[label] = counts.get(label, 0) + 1
         return counts
         
@@ -350,20 +385,24 @@ class KNNObjectClassifier:
             # Create directory if needed
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
             
+            active_X = self.X_train[:self._actual_size] if self._actual_size > 0 else np.empty((0, self.embedding_dim), dtype=np.float32)
+            active_y = self.y_train[:self._actual_size] if self._actual_size > 0 else np.array([], dtype=object)
+            
             # Save model data with numpy arrays
             model_data = {
-                'X_train': self.X_train,
-                'y_train': self.y_train,
+                'X_train': active_X,
+                'y_train': active_y,
                 'n_neighbors': self.n_neighbors,
                 'confidence_threshold': self.confidence_threshold,
                 'max_samples_per_class': self.max_samples_per_class,
-                'embedding_dim': self.embedding_dim
+                'embedding_dim': self.embedding_dim,
+                'actual_size': self._actual_size
             }
             
             # Use numpy's save for better handling of arrays
             np.savez_compressed(save_path, **model_data)
                 
-            logger.info(f"Model saved to {save_path} ({len(self.X_train)} samples)")
+            logger.info(f"Model saved to {save_path} ({self._actual_size} samples)")
         
     def load_model(self, path: Optional[str] = None) -> bool:
         """Load a trained model from disk."""
@@ -378,23 +417,33 @@ class KNNObjectClassifier:
                 # Load numpy archive
                 model_data = np.load(load_path, allow_pickle=True)
                 
-                self.X_train = model_data['X_train']
-                self.y_train = model_data['y_train']
+                loaded_X = model_data['X_train']
+                loaded_y = model_data['y_train']
                 self.n_neighbors = int(model_data.get('n_neighbors', self.n_neighbors))
                 self.confidence_threshold = float(model_data.get('confidence_threshold', self.confidence_threshold))
                 self.max_samples_per_class = int(model_data.get('max_samples_per_class', self.max_samples_per_class))
                 
                 # Ensure arrays are proper numpy arrays
-                if not isinstance(self.X_train, np.ndarray):
-                    self.X_train = np.array(self.X_train, dtype=np.float32)
-                if not isinstance(self.y_train, np.ndarray):
-                    self.y_train = np.array(self.y_train, dtype=object)
+                if not isinstance(loaded_X, np.ndarray):
+                    loaded_X = np.array(loaded_X, dtype=np.float32)
+                if not isinstance(loaded_y, np.ndarray):
+                    loaded_y = np.array(loaded_y, dtype=object)
+                
+                self._actual_size = len(loaded_X)
+                self._capacity = max(100, self._actual_size * 2)  # Ensure some growth capacity
+                
+                self.X_train = np.empty((self._capacity, self.embedding_dim), dtype=np.float32)
+                self.y_train = np.empty(self._capacity, dtype=object)
+                
+                if self._actual_size > 0:
+                    self.X_train[:self._actual_size] = loaded_X
+                    self.y_train[:self._actual_size] = loaded_y
                 
                 # Retrain KNN
-                if len(self.X_train) > 0:
+                if self._actual_size > 0:
                     self._retrain_knn()
                     
-                logger.info(f"Model loaded from {load_path}. {len(self.X_train)} samples")
+                logger.info(f"Model loaded from {load_path}. {self._actual_size} samples")
                 return True
                 
             except Exception as e:
@@ -404,8 +453,10 @@ class KNNObjectClassifier:
             
     def reset(self):
         """Reset the classifier, removing all training data."""
-        self.X_train = []
-        self.y_train = []
+        self.X_train = np.empty((0, self.embedding_dim), dtype=np.float32)
+        self.y_train = np.array([], dtype=object)
+        self._capacity = 100
+        self._actual_size = 0
         self.knn = KNeighborsClassifier(n_neighbors=self.n_neighbors)
         self.trained = False
         logger.info("Classifier reset")
