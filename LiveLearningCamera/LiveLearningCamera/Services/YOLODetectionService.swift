@@ -1,0 +1,485 @@
+//
+//  YOLODetectionService.swift
+//  LiveLearningCamera
+//
+//  Service for object detection using YOLOv11n CoreML model
+//
+
+import Vision
+import CoreML
+import UIKit
+import CoreImage
+import SwiftUI
+
+// MARK: - Detection Result
+struct Detection {
+    let label: String
+    let confidence: Float
+    let boundingBox: CGRect
+    let classIndex: Int
+    // MobileViT fields disabled - see DualClassificationPipeline.swift for implementation
+    // let mobileViTLabel: String?
+    // let mobileViTConfidence: Float?
+}
+
+// MARK: - YOLO Detection Service
+class YOLODetectionService: ObservableObject {
+    
+    // Use proper COCO dataset
+    private let cocoDataset = COCODataset.shared
+    
+    private var visionModel: VNCoreMLModel?
+    // MobileViT disabled - see DualClassificationPipeline.swift for dual classification
+    // private var mobileViTModel: VNCoreMLModel?
+    private var confidenceThreshold: Float
+    private let iouThreshold: Float
+    
+    // Settings
+    private let settings = DetectionSettingsManager.shared
+    private let coreDataManager = CoreDataManager.shared
+    
+    @Published var isModelLoaded = false
+    @Published var lastDetections: [Detection] = []
+    @Published var processingTime: Double = 0
+    @Published var isCaptureEnabled = false
+    
+    // Deduplication tracking
+    private var recentCaptures: [(classIndex: Int, boundingBox: CGRect, timestamp: Date)] = []
+    private let captureDeduplicationWindow: TimeInterval = 2.0 // seconds
+    private let boundingBoxSimilarityThreshold: Float = 0.7 // IoU threshold for similarity
+    private var lastCaptureTime: Date = Date.distantPast
+    
+    init(iouThreshold: Float = 0.4) {
+        self.confidenceThreshold = settings.confidenceThreshold
+        self.iouThreshold = iouThreshold
+        loadModel()
+    }
+    
+    // MARK: - Model Loading
+    private func loadModel() {
+        do {
+            // Load YOLO model
+            if let modelURL = Bundle.main.url(forResource: "yolo11n", withExtension: "mlmodelc") {
+                let model = try MLModel(contentsOf: modelURL)
+                self.visionModel = try VNCoreMLModel(for: model)
+                isModelLoaded = true
+                print("✅ YOLOv11n model loaded successfully")
+            } else {
+                print("⚠️ YOLOv11n model not found. Please add yolo11n.mlpackage to the project")
+            }
+            
+            // MobileViT loading disabled - see DualClassificationPipeline.swift for dual classification
+        } catch {
+            print("❌ Failed to load model: \(error)")
+        }
+    }
+    
+    // MARK: - Detection
+    func detect(in image: CIImage, completion: @escaping ([Detection]) -> Void) {
+        guard let model = visionModel else {
+            print("Model not loaded")
+            completion([])
+            return
+        }
+        
+        let startTime = CFAbsoluteTimeGetCurrent()
+        
+        let request = VNCoreMLRequest(model: model) { [weak self] request, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                print("Detection error: \(error)")
+                completion([])
+                return
+            }
+            
+            let detections = self.processResults(request.results)
+            
+            DispatchQueue.main.async {
+                self.processingTime = CFAbsoluteTimeGetCurrent() - startTime
+                self.lastDetections = detections
+                
+                // Capture detections to Core Data if enabled
+                if self.isCaptureEnabled {
+                    self.captureDetections(detections, from: image)
+                }
+                
+                completion(detections)
+            }
+        }
+        
+        // Configure for YOLO
+        request.imageCropAndScaleOption = .scaleFill
+        
+        // Perform detection
+        let handler = VNImageRequestHandler(ciImage: image, options: [:])
+        do {
+            try handler.perform([request])
+        } catch {
+            print("Failed to perform detection: \(error)")
+            completion([])
+        }
+    }
+    
+    // MARK: - Process Results
+    private func processResults(_ results: [Any]?) -> [Detection] {
+        guard let results = results as? [VNRecognizedObjectObservation] else {
+            // For YOLOv11, results might be VNCoreMLFeatureValueObservation
+            return processYOLOv11Results(results)
+        }
+        
+        // Process standard VNRecognizedObjectObservation
+        return results.compactMap { observation in
+            guard observation.confidence >= confidenceThreshold else { return nil }
+            
+            let classIndex = Int(observation.labels.first?.identifier ?? "0") ?? 0
+            guard classIndex < 80 else { return nil } // COCO has 80 classes
+            
+            // Skip filtered classes
+            guard settings.isClassEnabled(classIndex) else { return nil }
+            
+            let label = !settings.showClassification ? "object" :
+                (settings.useCOCOLabels ? 
+                cocoDataset.getClassName(byID: classIndex) : 
+                "class_\(classIndex)")
+            
+            return Detection(
+                label: label,
+                confidence: observation.confidence,
+                boundingBox: observation.boundingBox,
+                classIndex: classIndex
+            )
+        }
+    }
+    
+    // MARK: - Process YOLOv11 Specific Results
+    private func processYOLOv11Results(_ results: [Any]?) -> [Detection] {
+        guard let results = results as? [VNCoreMLFeatureValueObservation],
+              let firstResult = results.first,
+              let multiArray = firstResult.featureValue.multiArrayValue else {
+            return []
+        }
+        
+        // YOLOv11 output format: [1, 84, 8400] or similar
+        // First 4 values: x, y, w, h
+        // Next 80 values: class scores
+        
+        var detections: [Detection] = []
+        let shape = multiArray.shape
+        
+        // Parse based on output shape
+        if shape.count == 3 {
+            let numPredictions = shape[2].intValue
+            let numClasses = 80
+            
+            for i in 0..<numPredictions {
+                // Extract bbox and scores
+                let x = multiArray[[0, 0, i] as [NSNumber]].floatValue
+                let y = multiArray[[0, 1, i] as [NSNumber]].floatValue
+                let w = multiArray[[0, 2, i] as [NSNumber]].floatValue
+                let h = multiArray[[0, 3, i] as [NSNumber]].floatValue
+                
+                // Find best class
+                var maxScore: Float = 0
+                var maxClass = 0
+                
+                for c in 0..<numClasses {
+                    let score = multiArray[[0, 4 + c, i] as [NSNumber]].floatValue
+                    if score > maxScore {
+                        maxScore = score
+                        maxClass = c
+                    }
+                }
+                
+                // Check confidence threshold (use current settings value)
+                guard maxScore >= settings.confidenceThreshold else { continue }
+                
+                // Skip filtered classes
+                guard settings.isClassEnabled(maxClass) else { continue }
+                
+                // Convert to normalized coordinates
+                let bbox = CGRect(
+                    x: CGFloat(x - w/2) / 640.0,
+                    y: CGFloat(y - h/2) / 640.0,
+                    width: CGFloat(w) / 640.0,
+                    height: CGFloat(h) / 640.0
+                )
+                
+                let label = !settings.showClassification ? "object" :
+                    (settings.useCOCOLabels ? 
+                    cocoDataset.getClassName(byID: maxClass) : 
+                    "class_\(maxClass)")
+                
+                detections.append(Detection(
+                    label: label,
+                    confidence: maxScore,
+                    boundingBox: bbox,
+                    classIndex: maxClass
+                ))
+            }
+        }
+        
+        // Apply NMS
+        return applyNMS(to: detections)
+    }
+    
+    // MARK: - Non-Maximum Suppression
+    private func applyNMS(to detections: [Detection]) -> [Detection] {
+        // Group by class
+        var detectionsByClass: [Int: [Detection]] = [:]
+        for detection in detections {
+            detectionsByClass[detection.classIndex, default: []].append(detection)
+        }
+        
+        var finalDetections: [Detection] = []
+        
+        // Apply NMS per class
+        for (_, classDetections) in detectionsByClass {
+            let sorted = classDetections.sorted { $0.confidence > $1.confidence }
+            var keep: [Detection] = []
+            
+            for detection in sorted {
+                var shouldKeep = true
+                
+                for kept in keep {
+                    let iou = calculateIoU(detection.boundingBox, kept.boundingBox)
+                    if iou > iouThreshold {
+                        shouldKeep = false
+                        break
+                    }
+                }
+                
+                if shouldKeep {
+                    keep.append(detection)
+                }
+            }
+            
+            finalDetections.append(contentsOf: keep)
+        }
+        
+        return finalDetections
+    }
+    
+    // MARK: - MobileViT Classification (Disabled - see DualClassificationPipeline.swift)
+    /*
+    private func classifyWithMobileViT(cgImage: CGImage, boundingBox: CGRect, completion: @escaping (String?, Float?) -> Void) {
+        guard let mobileViTModel = mobileViTModel else {
+            completion(nil, nil)
+            return
+        }
+        
+        // Crop image to bounding box
+        guard let croppedImage = cropImage(cgImage, to: boundingBox) else {
+            completion(nil, nil)
+            return
+        }
+        
+        let request = VNCoreMLRequest(model: mobileViTModel) { request, error in
+            guard let observations = request.results as? [VNClassificationObservation],
+                  let topResult = observations.first else {
+                completion(nil, nil)
+                return
+            }
+            
+            completion(topResult.identifier, topResult.confidence)
+        }
+        
+        // MobileViT expects 256x256 input
+        request.imageCropAndScaleOption = .centerCrop
+        
+        let handler = VNImageRequestHandler(cgImage: croppedImage, options: [:])
+        try? handler.perform([request])
+    }
+    
+    // MARK: - Image Cropping
+    private func cropImage(_ image: CGImage, to boundingBox: CGRect) -> CGImage? {
+        let width = CGFloat(image.width)
+        let height = CGFloat(image.height)
+        
+        // Convert normalized coordinates to pixel coordinates
+        let x = boundingBox.origin.x * width
+        let y = (1 - boundingBox.origin.y - boundingBox.height) * height
+        let cropWidth = boundingBox.width * width
+        let cropHeight = boundingBox.height * height
+        
+        let cropRect = CGRect(x: x, y: y, width: cropWidth, height: cropHeight)
+        
+        return image.cropping(to: cropRect)
+    }
+    */
+    
+    // MARK: - IoU Calculation
+    private func calculateIoU(_ box1: CGRect, _ box2: CGRect) -> Float {
+        let intersection = box1.intersection(box2)
+        guard !intersection.isNull else { return 0 }
+        
+        let intersectionArea = intersection.width * intersection.height
+        let unionArea = box1.width * box1.height + box2.width * box2.height - intersectionArea
+        
+        return Float(intersectionArea / unionArea)
+    }
+    
+    // MARK: - Capture Methods
+    func startCaptureSession() {
+        _ = coreDataManager.startNewSession()
+        isCaptureEnabled = true
+    }
+    
+    func stopCaptureSession() {
+        isCaptureEnabled = false
+        coreDataManager.endCurrentSession()
+    }
+    
+    private func captureDetections(_ detections: [Detection], from ciImage: CIImage) {
+        guard isCaptureEnabled else { return }
+        
+        let now = Date()
+        
+        // Check capture interval throttling
+        guard now.timeIntervalSince(lastCaptureTime) >= settings.captureInterval else {
+            return // Too soon since last capture
+        }
+        
+        // Clean up old captures from deduplication tracking
+        if settings.enableDeduplication {
+            recentCaptures = recentCaptures.filter { 
+                now.timeIntervalSince($0.timestamp) < captureDeduplicationWindow 
+            }
+        }
+        
+        // Convert CIImage to UIImage for storage
+        let context = CIContext()
+        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
+        let uiImage = UIImage(cgImage: cgImage)
+        
+        // Track if we captured anything this cycle
+        var capturedAny = false
+        
+        // Capture each detection with deduplication
+        for detection in detections {
+            // Check if this detection is similar to a recent capture
+            if settings.enableDeduplication && isDuplicateDetection(detection) {
+                continue // Skip duplicate
+            }
+            
+            // Crop image to bounding box
+            let croppedImage = cropImage(uiImage, to: detection.boundingBox)
+            let imageData = croppedImage?.jpegData(compressionQuality: 0.8)
+            
+            // Get supercategory
+            let supercategory = cocoDataset.getSupercategory(byID: detection.classIndex)
+            
+            // Save to Core Data
+            _ = coreDataManager.captureDetection(
+                label: detection.label,
+                confidence: detection.confidence,
+                boundingBox: detection.boundingBox,
+                classIndex: detection.classIndex,
+                supercategory: supercategory,
+                imageData: imageData
+            )
+            
+            // Add to recent captures for deduplication
+            recentCaptures.append((
+                classIndex: detection.classIndex,
+                boundingBox: detection.boundingBox,
+                timestamp: now
+            ))
+            
+            capturedAny = true
+        }
+        
+        // Update last capture time only if we captured something
+        if capturedAny {
+            lastCaptureTime = now
+        }
+    }
+    
+    private func isDuplicateDetection(_ detection: Detection) -> Bool {
+        // Check against recent captures
+        for recent in recentCaptures {
+            // Must be same class
+            if recent.classIndex != detection.classIndex {
+                continue
+            }
+            
+            // Check if bounding boxes are similar (high IoU)
+            let iou = calculateIoU(detection.boundingBox, recent.boundingBox)
+            if iou > boundingBoxSimilarityThreshold {
+                return true // Found a duplicate
+            }
+        }
+        return false
+    }
+    
+    private func cropImage(_ image: UIImage, to boundingBox: CGRect) -> UIImage? {
+        guard let cgImage = image.cgImage else { return nil }
+        
+        let width = CGFloat(cgImage.width)
+        let height = CGFloat(cgImage.height)
+        
+        // Convert normalized coordinates to pixel coordinates
+        let x = boundingBox.origin.x * width
+        let y = (1 - boundingBox.origin.y - boundingBox.height) * height
+        let cropWidth = boundingBox.width * width
+        let cropHeight = boundingBox.height * height
+        
+        let cropRect = CGRect(x: x, y: y, width: cropWidth, height: cropHeight)
+        
+        guard let croppedCGImage = cgImage.cropping(to: cropRect) else { return nil }
+        return UIImage(cgImage: croppedCGImage)
+    }
+    
+    // MARK: - Drawing
+    func drawDetections(on image: UIImage) -> UIImage {
+        UIGraphicsBeginImageContextWithOptions(image.size, false, image.scale)
+        image.draw(at: .zero)
+        
+        guard let context = UIGraphicsGetCurrentContext() else {
+            return image
+        }
+        
+        let imageHeight = image.size.height
+        let imageWidth = image.size.width
+        
+        for detection in lastDetections {
+            // Convert normalized coordinates to image coordinates
+            let rect = CGRect(
+                x: detection.boundingBox.minX * imageWidth,
+                y: (1 - detection.boundingBox.maxY) * imageHeight,
+                width: detection.boundingBox.width * imageWidth,
+                height: detection.boundingBox.height * imageHeight
+            )
+            
+            // Draw bounding box
+            context.setStrokeColor(UIColor.green.cgColor)
+            context.setLineWidth(2)
+            context.stroke(rect)
+            
+            // Draw label
+            let label = settings.showConfidence ? 
+                "\(detection.label): \(String(format: "%.2f", detection.confidence))" :
+                detection.label
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 12, weight: .bold),
+                .foregroundColor: UIColor.white,
+                .backgroundColor: UIColor.green.withAlphaComponent(0.7)
+            ]
+            
+            let labelSize = label.size(withAttributes: attributes)
+            let labelRect = CGRect(
+                x: rect.minX,
+                y: rect.minY - labelSize.height,
+                width: labelSize.width + 4,
+                height: labelSize.height
+            )
+            
+            label.draw(in: labelRect, withAttributes: attributes)
+        }
+        
+        let resultImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        
+        return resultImage ?? image
+    }
+}
