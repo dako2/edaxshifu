@@ -15,7 +15,7 @@ class CoreDataManager {
     
     // MARK: - Core Data Stack
     lazy var persistentContainer: NSPersistentContainer = {
-        let container = NSPersistentContainer(name: "LiveLearningCamera")
+        let container = NSPersistentContainer(name: "ObjectMemory")
         container.loadPersistentStores { _, error in
             if let error = error as NSError? {
                 print("Core Data failed to load: \(error), \(error.userInfo)")
@@ -181,6 +181,13 @@ class CoreDataManager {
             } catch {
                 let nsError = error as NSError
                 print("Failed to save context: \(nsError), \(nsError.userInfo)")
+                // Report error through ErrorManager
+                Task { @MainActor in
+                    ErrorManager.shared.handle(
+                        AppError.coreDataError("Failed to save: \(error.localizedDescription)"),
+                        context: "CoreDataManager.saveContext"
+                    )
+                }
             }
         }
     }

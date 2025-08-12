@@ -38,9 +38,111 @@ struct CameraPreview: UIViewRepresentable {
     }
 }
 
-// MARK: - Detection Overlay View
+// MARK: - Professional Detection Overlay View
+struct ProfessionalDetectionOverlay: View {
+    let trackedObjects: [MemoryTrackedObject]
+    let imageSize: CGSize
+    @ObservedObject var settings = DetectionSettingsManager.shared
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ForEach(trackedObjects, id: \.id) { object in
+                let rect = normalizedRect(object.lastBoundingBox, in: geometry.size)
+                
+                ZStack(alignment: .topLeading) {
+                    // Bounding box with color based on type
+                    Rectangle()
+                        .stroke(object.label.contains("Hand") ? 
+                               colorForLabel(object.label) : 
+                               colorForConfidence(object.confidence), 
+                               lineWidth: object.label.contains("Hand") ? 3 : 2)
+                        .frame(width: rect.width, height: rect.height)
+                        .position(x: rect.midX, y: rect.midY)
+                    
+                    // Label
+                    HStack(spacing: 4) {
+                        Text(object.label)
+                            .font(.caption)
+                        if settings.showConfidence {
+                            Text(String(format: "%.0f%%", object.confidence * 100))
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(3)
+                    .background(Color.black.opacity(0.7))
+                    .foregroundColor(.white)
+                    .cornerRadius(4)
+                    .position(x: rect.minX + 40, y: rect.minY - 10)
+                }
+            }
+        }
+    }
+    
+    private func normalizedRect(_ bbox: CGRect, in size: CGSize) -> CGRect {
+        // Vision returns normalized coordinates (0-1)
+        // Account for aspect fill mode of AVCaptureVideoPreviewLayer
+        
+        // Camera outputs 1920x1080 (16:9) but in portrait mode it's rotated
+        let videoAspect: CGFloat = 1080.0 / 1920.0  // Portrait video aspect
+        let viewAspect = size.width / size.height
+        
+        var x: CGFloat
+        var y: CGFloat
+        var width: CGFloat
+        var height: CGFloat
+        
+        if viewAspect > videoAspect {
+            // View is wider than video - video fills height, crops width
+            let videoWidth = size.height * videoAspect
+            let xOffset = (size.width - videoWidth) / 2
+            
+            x = xOffset + bbox.minX * videoWidth
+            y = (1 - bbox.maxY) * size.height
+            width = bbox.width * videoWidth
+            height = bbox.height * size.height
+        } else {
+            // View is narrower than video - video fills width, crops height
+            let videoHeight = size.width / videoAspect
+            let yOffset = (size.height - videoHeight) / 2
+            
+            x = bbox.minX * size.width
+            y = yOffset + (1 - bbox.maxY) * videoHeight
+            width = bbox.width * size.width
+            height = bbox.height * videoHeight
+        }
+        
+        return CGRect(x: x, y: y, width: width, height: height)
+    }
+    
+    private func colorForConfidence(_ confidence: Float) -> Color {
+        if confidence > 0.8 {
+            return .green
+        } else if confidence > 0.6 {
+            return .yellow
+        } else {
+            return .orange
+        }
+    }
+    
+    private func colorForLabel(_ label: String) -> Color {
+        // Special colors for hands
+        if label.contains("Hand") {
+            if label.contains("Left") {
+                return .blue
+            } else if label.contains("Right") {
+                return .purple
+            }
+            return .cyan
+        }
+        // Default colors for objects
+        return colorForConfidence(0.8)
+    }
+}
+
+// MARK: - Legacy Detection Overlay (for backwards compatibility)
 struct DetectionOverlay: View {
-    let detections: [Detection]
+    let detections: [Detection] = [] // Deprecated
     let imageSize: CGSize
     @ObservedObject var settings = DetectionSettingsManager.shared
     
@@ -72,48 +174,90 @@ struct DetectionOverlay: View {
     }
     
     private func normalizedRect(_ bbox: CGRect, in size: CGSize) -> CGRect {
-        CGRect(
-            x: bbox.minX * size.width,
-            y: (1 - bbox.maxY) * size.height,
-            width: bbox.width * size.width,
-            height: bbox.height * size.height
-        )
+        // Vision returns normalized coordinates (0-1)
+        // Account for aspect fill mode of AVCaptureVideoPreviewLayer
+        
+        // Camera outputs 1920x1080 (16:9) but in portrait mode it's rotated
+        let videoAspect: CGFloat = 1080.0 / 1920.0  // Portrait video aspect
+        let viewAspect = size.width / size.height
+        
+        var x: CGFloat
+        var y: CGFloat
+        var width: CGFloat
+        var height: CGFloat
+        
+        if viewAspect > videoAspect {
+            // View is wider than video - video fills height, crops width
+            let videoWidth = size.height * videoAspect
+            let xOffset = (size.width - videoWidth) / 2
+            
+            x = xOffset + bbox.minX * videoWidth
+            y = (1 - bbox.maxY) * size.height
+            width = bbox.width * videoWidth
+            height = bbox.height * size.height
+        } else {
+            // View is narrower than video - video fills width, crops height
+            let videoHeight = size.width / videoAspect
+            let yOffset = (size.height - videoHeight) / 2
+            
+            x = bbox.minX * size.width
+            y = yOffset + (1 - bbox.maxY) * videoHeight
+            width = bbox.width * size.width
+            height = bbox.height * videoHeight
+        }
+        
+        return CGRect(x: x, y: y, width: width, height: height)
     }
 }
 
 // MARK: - Main Camera View
 struct CameraView: View {
     @StateObject private var cameraManager = CameraManager()
-    @StateObject private var yoloDetector = YOLODetectionService()
+    @StateObject private var detectionPipeline = OptimizedDetectionPipeline()
     @StateObject private var settings = DetectionSettingsManager.shared
-    @State private var detections: [Detection] = []
+    @State private var trackedObjects: [MemoryTrackedObject] = []
+    @State private var handDetections: [HandTrackingResult] = []
+    @State private var sceneContext: AnalyzedScene?
+    @State private var performanceMetrics = PerformanceMetrics()
+    
+    // Camera frame dimensions (standard iOS camera output)
+    private let cameraFrameSize = CGSize(width: 1920, height: 1080)
     @State private var isProcessing = false
     @State private var showStats = true
     @State private var showSettings = false
     @State private var showHistory = false
-    @State private var isCapturing = false
+    @State private var isRecording = false
     
     private let detectionTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
     
     var body: some View {
-        ZStack {
-            // Camera Preview
-            CameraPreview(cameraManager: cameraManager)
-                .ignoresSafeArea()
-            
-            // Detection Overlay
-            DetectionOverlay(
-                detections: detections,
-                imageSize: UIScreen.main.bounds.size
-            )
-            .ignoresSafeArea()
-            
-            // Controls Overlay
-            VStack {
+        GeometryReader { geometry in
+            ZStack {
+                // Camera Preview
+                CameraPreview(cameraManager: cameraManager)
+                    .ignoresSafeArea()
+                
+                // Object Detection Overlay (YOLO)
+                ProfessionalDetectionOverlay(
+                    trackedObjects: trackedObjects,
+                    imageSize: geometry.size
+                )
+                
+                // Hand Tracking Overlay (MediaPipe-style)
+                if settings.enableHandTracking {
+                    HandLandmarkOverlay(
+                        handDetections: handDetections,
+                        imageSize: geometry.size
+                    )
+                }
+                
+                // Controls Overlay
+                VStack {
+                
                 // Top Stats Bar
                 if showStats {
                     HStack {
-                        Label("\(detections.count) objects", systemImage: "eye")
+                        Label("\(trackedObjects.count) objects", systemImage: "eye")
                         Spacer()
                         if isProcessing {
                             ProgressView()
@@ -121,7 +265,7 @@ struct CameraView: View {
                                 .scaleEffect(0.8)
                         }
                         if settings.showFPS {
-                            Label(String(format: "%.1f FPS", 1.0 / max(0.001, yoloDetector.processingTime)), systemImage: "speedometer")
+                            Label(String(format: "%.1f FPS", performanceMetrics.fps), systemImage: "speedometer")
                         }
                         
                         // History Button
@@ -162,35 +306,30 @@ struct CameraView: View {
                             .background(Circle().fill(Color.black.opacity(0.5)))
                     }
                     
-                    // Capture Toggle Button
-                    Button(action: {
-                        if isCapturing {
-                            yoloDetector.stopCaptureSession()
-                        } else {
-                            yoloDetector.startCaptureSession()
-                        }
-                        isCapturing.toggle()
-                    }) {
+                    // Record Toggle Button
+                    Button(action: toggleRecording) {
                         Circle()
-                            .strokeBorder(isCapturing ? Color.red : Color.white, lineWidth: 3)
+                            .strokeBorder(isRecording ? Color.red : Color.white, lineWidth: 3)
                             .frame(width: 70, height: 70)
                             .overlay(
                                 Circle()
-                                    .fill(isCapturing ? Color.red : Color.white)
+                                    .fill(isRecording ? Color.red : Color.white)
                                     .frame(width: 60, height: 60)
                             )
                             .overlay(
-                                Image(systemName: isCapturing ? "stop.fill" : "record.circle")
-                                    .foregroundColor(isCapturing ? .white : .red)
+                                Image(systemName: isRecording ? "stop.fill" : "record.circle")
+                                    .foregroundColor(isRecording ? .white : .red)
                                     .font(.title2)
                             )
                     }
                     
-                    // Toggle Stats
+                    // Analytics Button
                     Button(action: {
-                        showStats.toggle()
+                        // Show analytics or export report
+                        let report = detectionPipeline.exportAnalytics()
+                        print(report.summary)
                     }) {
-                        Image(systemName: showStats ? "info.circle.fill" : "info.circle")
+                        Image(systemName: "chart.bar.fill")
                             .font(.title2)
                             .foregroundColor(.white)
                             .frame(width: 50, height: 50)
@@ -199,7 +338,8 @@ struct CameraView: View {
                 }
                 .padding(.bottom, 30)
             }
-        }
+            } // End ZStack
+        } // End GeometryReader
         .onAppear {
             cameraManager.startSession()
         }
@@ -227,14 +367,29 @@ struct CameraView: View {
     
     private func performDetection() {
         guard !isProcessing,
-              let frame = cameraManager.currentFrame,
-              yoloDetector.isModelLoaded else { return }
+              let frame = cameraManager.currentFrame else { return }
         
         isProcessing = true
         
-        yoloDetector.detect(in: frame) { newDetections in
-            self.detections = newDetections
-            self.isProcessing = false
+        Task {
+            let result = await detectionPipeline.process(frame: frame)
+            
+            await MainActor.run {
+                self.trackedObjects = result.trackedObjects
+                self.handDetections = result.handDetections
+                self.sceneContext = result.sceneContext
+                self.performanceMetrics = result.metrics
+                self.isProcessing = false
+            }
         }
+    }
+    
+    private func toggleRecording() {
+        if isRecording {
+            detectionPipeline.stopRecording()
+        } else {
+            detectionPipeline.startRecording()
+        }
+        isRecording.toggle()
     }
 }

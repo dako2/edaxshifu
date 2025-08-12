@@ -74,6 +74,33 @@ struct SettingsView: View {
                     }
                 }
                 
+                Section(header: Text("Hand Tracking")) {
+                    Toggle("Enable Hand Tracking", isOn: $settings.enableHandTracking)
+                    
+                    if settings.enableHandTracking {
+                        Toggle("Show Hand Gestures", isOn: $settings.showHandGestures)
+                        Toggle("Show Hand Landmarks", isOn: $settings.showHandLandmarks)
+                        
+                        VStack(alignment: .leading) {
+                            HStack {
+                                Text("Max Hands")
+                                Spacer()
+                                Text("\(settings.maxHandCount)")
+                                    .foregroundColor(.secondary)
+                            }
+                            Picker("Max Hands", selection: $settings.maxHandCount) {
+                                Text("1").tag(1)
+                                Text("2").tag(2)
+                            }
+                            .pickerStyle(SegmentedPickerStyle())
+                        }
+                        
+                        Text("Detects hands with 21 landmarks and gesture recognition")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
                 Section(header: Text("Detection Threshold")) {
                     VStack {
                         HStack {
@@ -91,16 +118,28 @@ struct SettingsView: View {
                 
                 Section(header: Text("About")) {
                     HStack {
-                        Text("Model")
+                        Text("Models")
                         Spacer()
-                        Text("YOLOv11n")
-                            .foregroundColor(.secondary)
+                        VStack(alignment: .trailing) {
+                            Text("YOLOv11n")
+                            if settings.enableHandTracking {
+                                Text("Vision Hand Pose")
+                                    .font(.caption)
+                            }
+                        }
+                        .foregroundColor(.secondary)
                     }
                     HStack {
                         Text("Classes")
                         Spacer()
-                        Text("80 COCO Classes")
-                            .foregroundColor(.secondary)
+                        VStack(alignment: .trailing) {
+                            Text("80 COCO Classes")
+                            if settings.enableHandTracking {
+                                Text("+ Hand Gestures")
+                                    .font(.caption)
+                            }
+                        }
+                        .foregroundColor(.secondary)
                     }
                 }
             }

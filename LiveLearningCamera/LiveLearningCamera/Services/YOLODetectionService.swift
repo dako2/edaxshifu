@@ -17,6 +17,7 @@ struct Detection {
     let confidence: Float
     let boundingBox: CGRect
     let classIndex: Int
+    var id: Int? // Optional tracking ID
     // MobileViT fields disabled - see DualClassificationPipeline.swift for implementation
     // let mobileViTLabel: String?
     // let mobileViTConfidence: Float?
@@ -31,7 +32,7 @@ class YOLODetectionService: ObservableObject {
     private var visionModel: VNCoreMLModel?
     // MobileViT disabled - see DualClassificationPipeline.swift for dual classification
     // private var mobileViTModel: VNCoreMLModel?
-    private var confidenceThreshold: Float
+    var confidenceThreshold: Float
     private let iouThreshold: Float
     
     // Settings
@@ -50,7 +51,9 @@ class YOLODetectionService: ObservableObject {
     private var lastCaptureTime: Date = Date.distantPast
     
     init(iouThreshold: Float = 0.4) {
-        self.confidenceThreshold = settings.confidenceThreshold
+        // Lower confidence threshold to catch more detections
+        // The stabilizer will handle false positives
+        self.confidenceThreshold = max(0.25, settings.confidenceThreshold * 0.7)
         self.iouThreshold = iouThreshold
         loadModel()
     }
@@ -104,12 +107,15 @@ class YOLODetectionService: ObservableObject {
                     self.captureDetections(detections, from: image)
                 }
                 
+                // Detections are now processed by OptimizedDetectionPipeline
+                // No need for additional processing here
+                
                 completion(detections)
             }
         }
         
         // Configure for YOLO
-        request.imageCropAndScaleOption = .scaleFill
+        request.imageCropAndScaleOption = VNImageCropAndScaleOption.scaleFill
         
         // Perform detection
         let handler = VNImageRequestHandler(ciImage: image, options: [:])
@@ -132,16 +138,30 @@ class YOLODetectionService: ObservableObject {
         return results.compactMap { observation in
             guard observation.confidence >= confidenceThreshold else { return nil }
             
-            let classIndex = Int(observation.labels.first?.identifier ?? "0") ?? 0
+            // VNRecognizedObjectObservation provides labels with identifiers
+            // The identifier should contain the class index
+            var classIndex = 0
+            if let firstLabel = observation.labels.first {
+                // Try to extract class index from identifier
+                if let index = Int(firstLabel.identifier) {
+                    classIndex = index
+                } else {
+                    // Fallback: Try to parse from label if it's in format "class_X"
+                    let components = firstLabel.identifier.components(separatedBy: "_")
+                    if components.count > 1, let index = Int(components.last ?? "") {
+                        classIndex = index
+                    }
+                }
+            }
+            
             guard classIndex < 80 else { return nil } // COCO has 80 classes
             
             // Skip filtered classes
             guard settings.isClassEnabled(classIndex) else { return nil }
             
+            // Always use COCO labels if available, since model is trained on COCO
             let label = !settings.showClassification ? "object" :
-                (settings.useCOCOLabels ? 
-                cocoDataset.getClassName(byID: classIndex) : 
-                "class_\(classIndex)")
+                cocoDataset.getClassName(byID: classIndex)
             
             return Detection(
                 label: label,
@@ -366,11 +386,18 @@ class YOLODetectionService: ObservableObject {
             let croppedImage = cropImage(uiImage, to: detection.boundingBox)
             let imageData = croppedImage?.jpegData(compressionQuality: 0.8)
             
+            // Debug logging
+            if let imageData = imageData {
+                print("Captured \(detection.label): image size = \(imageData.count) bytes")
+            } else {
+                print("Warning: Failed to capture image for \(detection.label)")
+            }
+            
             // Get supercategory
             let supercategory = cocoDataset.getSupercategory(byID: detection.classIndex)
             
             // Save to Core Data
-            _ = coreDataManager.captureDetection(
+            let capturedDetection = coreDataManager.captureDetection(
                 label: detection.label,
                 confidence: detection.confidence,
                 boundingBox: detection.boundingBox,
@@ -378,6 +405,8 @@ class YOLODetectionService: ObservableObject {
                 supercategory: supercategory,
                 imageData: imageData
             )
+            
+            print("Saved detection: \(capturedDetection.label ?? "unknown") with image: \(capturedDetection.imageData != nil)")
             
             // Add to recent captures for deduplication
             recentCaptures.append((
@@ -412,6 +441,11 @@ class YOLODetectionService: ObservableObject {
         return false
     }
     
+    private func getCGImage(from ciImage: CIImage) -> CGImage? {
+        let context = CIContext()
+        return context.createCGImage(ciImage, from: ciImage.extent)
+    }
+    
     private func cropImage(_ image: UIImage, to boundingBox: CGRect) -> UIImage? {
         guard let cgImage = image.cgImage else { return nil }
         
@@ -419,15 +453,33 @@ class YOLODetectionService: ObservableObject {
         let height = CGFloat(cgImage.height)
         
         // Convert normalized coordinates to pixel coordinates
-        let x = boundingBox.origin.x * width
-        let y = (1 - boundingBox.origin.y - boundingBox.height) * height
-        let cropWidth = boundingBox.width * width
-        let cropHeight = boundingBox.height * height
+        // YOLO uses center-based coordinates, already converted to top-left in detection
+        // Add small padding to ensure we capture the full object
+        let padding: CGFloat = 10
+        
+        let x = max(0, boundingBox.origin.x * width - padding)
+        let y = max(0, boundingBox.origin.y * height - padding)
+        let cropWidth = min(width - x, boundingBox.width * width + padding * 2)
+        let cropHeight = min(height - y, boundingBox.height * height + padding * 2)
+        
+        // Ensure crop rect is valid
+        guard cropWidth > 0 && cropHeight > 0 else { 
+            print("Invalid crop rect: width=\(cropWidth), height=\(cropHeight)")
+            return nil 
+        }
         
         let cropRect = CGRect(x: x, y: y, width: cropWidth, height: cropHeight)
         
-        guard let croppedCGImage = cgImage.cropping(to: cropRect) else { return nil }
-        return UIImage(cgImage: croppedCGImage)
+        guard let croppedCGImage = cgImage.cropping(to: cropRect) else { 
+            print("Failed to crop image with rect: \(cropRect)")
+            return nil 
+        }
+        
+        // Debug: Verify cropped image
+        let croppedImage = UIImage(cgImage: croppedCGImage)
+        print("Successfully cropped image: \(croppedImage.size)")
+        
+        return croppedImage
     }
     
     // MARK: - Drawing
