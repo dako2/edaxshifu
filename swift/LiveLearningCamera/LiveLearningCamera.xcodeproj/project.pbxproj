@@ -6,7 +6,34 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		76068E9B2E4C3EAC0089FC71 /* CameraLearningModule.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76068E902E4C3EAC0089FC71 /* CameraLearningModule.framework */; };
+		76068EA52E4C3EAC0089FC71 /* CameraLearningModule.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76068E902E4C3EAC0089FC71 /* CameraLearningModule.framework */; };
+		76068EA62E4C3EAC0089FC71 /* CameraLearningModule.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 76068E902E4C3EAC0089FC71 /* CameraLearningModule.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
+		76068E9C2E4C3EAC0089FC71 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 76D574702E49CE4F00E1D6A6 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 76068E8F2E4C3EAC0089FC71;
+			remoteInfo = CameraLearningModule;
+		};
+		76068E9E2E4C3EAC0089FC71 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 76D574702E49CE4F00E1D6A6 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 76D574772E49CE4F00E1D6A6;
+			remoteInfo = LiveLearningCamera;
+		};
+		76068EA32E4C3EAC0089FC71 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 76D574702E49CE4F00E1D6A6 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 76068E8F2E4C3EAC0089FC71;
+			remoteInfo = CameraLearningModule;
+		};
 		76D574862E49CE5100E1D6A6 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 76D574702E49CE4F00E1D6A6 /* Project object */;
@@ -23,13 +50,64 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		76068EAA2E4C3EAC0089FC71 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				76068EA62E4C3EAC0089FC71 /* CameraLearningModule.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		76068E902E4C3EAC0089FC71 /* CameraLearningModule.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = CameraLearningModule.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		76068E9A2E4C3EAC0089FC71 /* CameraLearningModuleTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CameraLearningModuleTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		76D574782E49CE4F00E1D6A6 /* LiveLearningCamera.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LiveLearningCamera.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		76D574852E49CE5100E1D6A6 /* LiveLearningCameraTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LiveLearningCameraTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		76D5748F2E49CE5100E1D6A6 /* LiveLearningCameraUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LiveLearningCameraUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		76068F4C2E4C405A0089FC71 /* Exceptions for "CameraLearningModule" folder in "LiveLearningCamera" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Resources/MobileViT/MobileViT.mlpackage,
+				"Resources/YOLOv11-CoreML/.gitattributes",
+				"Resources/YOLOv11-CoreML/yolo11n.mlpackage",
+			);
+			target = 76D574772E49CE4F00E1D6A6 /* LiveLearningCamera */;
+		};
+		76068F4D2E4C405A0089FC71 /* Exceptions for "CameraLearningModule" folder in "CameraLearningModule" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Resources/MobileViT/MobileViT.mlpackage,
+				"Resources/YOLOv11-CoreML/.gitattributes",
+				"Resources/YOLOv11-CoreML/yolo11n.mlpackage",
+			);
+			target = 76068E8F2E4C3EAC0089FC71 /* CameraLearningModule */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		76068E912E4C3EAC0089FC71 /* CameraLearningModule */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				76068F4C2E4C405A0089FC71 /* Exceptions for "CameraLearningModule" folder in "LiveLearningCamera" target */,
+				76068F4D2E4C405A0089FC71 /* Exceptions for "CameraLearningModule" folder in "CameraLearningModule" target */,
+			);
+			path = CameraLearningModule;
+			sourceTree = "<group>";
+		};
+		76068EA02E4C3EAC0089FC71 /* CameraLearningModuleTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CameraLearningModuleTests;
+			sourceTree = "<group>";
+		};
 		76D5747A2E49CE4F00E1D6A6 /* LiveLearningCamera */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = LiveLearningCamera;
@@ -48,10 +126,26 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		76068E8D2E4C3EAC0089FC71 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		76068E972E4C3EAC0089FC71 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				76068E9B2E4C3EAC0089FC71 /* CameraLearningModule.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		76D574752E49CE4F00E1D6A6 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				76068EA52E4C3EAC0089FC71 /* CameraLearningModule.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -72,12 +166,30 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		76068E892E4C3E7D0089FC71 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				76D574882E49CE5100E1D6A6 /* LiveLearningCameraTests */,
+				76D574922E49CE5100E1D6A6 /* LiveLearningCameraUITests */,
+				76068EA02E4C3EAC0089FC71 /* CameraLearningModuleTests */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		76068E8A2E4C3E8D0089FC71 /* ActiveTargets */ = {
+			isa = PBXGroup;
+			children = (
+				76068E912E4C3EAC0089FC71 /* CameraLearningModule */,
+				76D5747A2E49CE4F00E1D6A6 /* LiveLearningCamera */,
+			);
+			path = ActiveTargets;
+			sourceTree = "<group>";
+		};
 		76D5746F2E49CE4F00E1D6A6 = {
 			isa = PBXGroup;
 			children = (
-				76D5747A2E49CE4F00E1D6A6 /* LiveLearningCamera */,
-				76D574882E49CE5100E1D6A6 /* LiveLearningCameraTests */,
-				76D574922E49CE5100E1D6A6 /* LiveLearningCameraUITests */,
+				76068E8A2E4C3E8D0089FC71 /* ActiveTargets */,
+				76068E892E4C3E7D0089FC71 /* Tests */,
 				76D574792E49CE4F00E1D6A6 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -88,13 +200,72 @@
 				76D574782E49CE4F00E1D6A6 /* LiveLearningCamera.app */,
 				76D574852E49CE5100E1D6A6 /* LiveLearningCameraTests.xctest */,
 				76D5748F2E49CE5100E1D6A6 /* LiveLearningCameraUITests.xctest */,
+				76068E902E4C3EAC0089FC71 /* CameraLearningModule.framework */,
+				76068E9A2E4C3EAC0089FC71 /* CameraLearningModuleTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
+/* Begin PBXHeadersBuildPhase section */
+		76068E8B2E4C3EAC0089FC71 /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXHeadersBuildPhase section */
+
 /* Begin PBXNativeTarget section */
+		76068E8F2E4C3EAC0089FC71 /* CameraLearningModule */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 76068EA72E4C3EAC0089FC71 /* Build configuration list for PBXNativeTarget "CameraLearningModule" */;
+			buildPhases = (
+				76068E8B2E4C3EAC0089FC71 /* Headers */,
+				76068E8C2E4C3EAC0089FC71 /* Sources */,
+				76068E8D2E4C3EAC0089FC71 /* Frameworks */,
+				76068E8E2E4C3EAC0089FC71 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				76068E912E4C3EAC0089FC71 /* CameraLearningModule */,
+			);
+			name = CameraLearningModule;
+			packageProductDependencies = (
+			);
+			productName = CameraLearningModule;
+			productReference = 76068E902E4C3EAC0089FC71 /* CameraLearningModule.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+		76068E992E4C3EAC0089FC71 /* CameraLearningModuleTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 76068EAB2E4C3EAC0089FC71 /* Build configuration list for PBXNativeTarget "CameraLearningModuleTests" */;
+			buildPhases = (
+				76068E962E4C3EAC0089FC71 /* Sources */,
+				76068E972E4C3EAC0089FC71 /* Frameworks */,
+				76068E982E4C3EAC0089FC71 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				76068E9D2E4C3EAC0089FC71 /* PBXTargetDependency */,
+				76068E9F2E4C3EAC0089FC71 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				76068EA02E4C3EAC0089FC71 /* CameraLearningModuleTests */,
+			);
+			name = CameraLearningModuleTests;
+			packageProductDependencies = (
+			);
+			productName = CameraLearningModuleTests;
+			productReference = 76068E9A2E4C3EAC0089FC71 /* CameraLearningModuleTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		76D574772E49CE4F00E1D6A6 /* LiveLearningCamera */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 76D574992E49CE5100E1D6A6 /* Build configuration list for PBXNativeTarget "LiveLearningCamera" */;
@@ -102,10 +273,12 @@
 				76D574742E49CE4F00E1D6A6 /* Sources */,
 				76D574752E49CE4F00E1D6A6 /* Frameworks */,
 				76D574762E49CE4F00E1D6A6 /* Resources */,
+				76068EAA2E4C3EAC0089FC71 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				76068EA42E4C3EAC0089FC71 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				76D5747A2E49CE4F00E1D6A6 /* LiveLearningCamera */,
@@ -173,6 +346,13 @@
 				LastSwiftUpdateCheck = 1640;
 				LastUpgradeCheck = 1640;
 				TargetAttributes = {
+					76068E8F2E4C3EAC0089FC71 = {
+						CreatedOnToolsVersion = 16.4;
+					};
+					76068E992E4C3EAC0089FC71 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = 76D574772E49CE4F00E1D6A6;
+					};
 					76D574772E49CE4F00E1D6A6 = {
 						CreatedOnToolsVersion = 16.4;
 					};
@@ -203,11 +383,27 @@
 				76D574772E49CE4F00E1D6A6 /* LiveLearningCamera */,
 				76D574842E49CE5100E1D6A6 /* LiveLearningCameraTests */,
 				76D5748E2E49CE5100E1D6A6 /* LiveLearningCameraUITests */,
+				76068E8F2E4C3EAC0089FC71 /* CameraLearningModule */,
+				76068E992E4C3EAC0089FC71 /* CameraLearningModuleTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		76068E8E2E4C3EAC0089FC71 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		76068E982E4C3EAC0089FC71 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		76D574762E49CE4F00E1D6A6 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -232,6 +428,20 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		76068E8C2E4C3EAC0089FC71 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		76068E962E4C3EAC0089FC71 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		76D574742E49CE4F00E1D6A6 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -256,6 +466,21 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		76068E9D2E4C3EAC0089FC71 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 76068E8F2E4C3EAC0089FC71 /* CameraLearningModule */;
+			targetProxy = 76068E9C2E4C3EAC0089FC71 /* PBXContainerItemProxy */;
+		};
+		76068E9F2E4C3EAC0089FC71 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 76D574772E49CE4F00E1D6A6 /* LiveLearningCamera */;
+			targetProxy = 76068E9E2E4C3EAC0089FC71 /* PBXContainerItemProxy */;
+		};
+		76068EA42E4C3EAC0089FC71 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 76068E8F2E4C3EAC0089FC71 /* CameraLearningModule */;
+			targetProxy = 76068EA32E4C3EAC0089FC71 /* PBXContainerItemProxy */;
+		};
 		76D574872E49CE5100E1D6A6 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 76D574772E49CE4F00E1D6A6 /* LiveLearningCamera */;
@@ -269,6 +494,110 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		76068EA82E4C3EAC0089FC71 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 42R8ZPM5N8;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
+				PRODUCT_BUNDLE_IDENTIFIER = ebowwa.CameraLearningModule;
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INSTALL_MODULE = YES;
+				SWIFT_INSTALL_OBJC_HEADER = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Debug;
+		};
+		76068EA92E4C3EAC0089FC71 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 42R8ZPM5N8;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
+				PRODUCT_BUNDLE_IDENTIFIER = ebowwa.CameraLearningModule;
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INSTALL_MODULE = YES;
+				SWIFT_INSTALL_OBJC_HEADER = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Release;
+		};
+		76068EAC2E4C3EAC0089FC71 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 42R8ZPM5N8;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ebowwa.CameraLearningModuleTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LiveLearningCamera.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LiveLearningCamera";
+			};
+			name = Debug;
+		};
+		76068EAD2E4C3EAC0089FC71 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 42R8ZPM5N8;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ebowwa.CameraLearningModuleTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LiveLearningCamera.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LiveLearningCamera";
+			};
+			name = Release;
+		};
 		76D574972E49CE5100E1D6A6 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -527,6 +856,24 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		76068EA72E4C3EAC0089FC71 /* Build configuration list for PBXNativeTarget "CameraLearningModule" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				76068EA82E4C3EAC0089FC71 /* Debug */,
+				76068EA92E4C3EAC0089FC71 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		76068EAB2E4C3EAC0089FC71 /* Build configuration list for PBXNativeTarget "CameraLearningModuleTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				76068EAC2E4C3EAC0089FC71 /* Debug */,
+				76068EAD2E4C3EAC0089FC71 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		76D574732E49CE4F00E1D6A6 /* Build configuration list for PBXProject "LiveLearningCamera" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
