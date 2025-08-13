@@ -19,9 +19,9 @@ from PIL import Image
 import numpy as np
 
 from .knn_classifier import AdaptiveKNNClassifier
+from .logging_config import get_logger
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_logger("annotation_interface")
 
 # Import new annotator system
 try:
@@ -76,6 +76,7 @@ class AnnotationQueue:
             key=lambda x: os.path.getmtime(os.path.join(self.failed_dir, x)),
             reverse=True
         )
+        logger.debug(f"Scanning {len(files)} files in {self.failed_dir}")
         
         for filename in files:
             # Skip if this is the file currently being annotated
@@ -115,7 +116,9 @@ class AnnotationQueue:
                     if not self._is_in_queue(filepath):
                         self.queue.put(task)
                         new_tasks += 1
+                        logger.debug(f"Added task to queue: {filename}")
                     
+        logger.info(f"Scanned annotation queue: {new_tasks} new tasks found")
         return new_tasks
     
     def _is_in_queue(self, filepath: str) -> bool:
@@ -146,8 +149,10 @@ class AnnotationQueue:
         try:
             task = self.queue.get_nowait()
             self.currently_annotating = task.image_path
+            logger.debug(f"Retrieved task from queue: {os.path.basename(task.image_path)}")
             return task
         except queue.Empty:
+            logger.debug("No tasks available in annotation queue")
             return None
     
     def mark_completed(self, task: AnnotationTask):
@@ -157,12 +162,14 @@ class AnnotationQueue:
             filename = os.path.basename(task.image_path)
             new_path = os.path.join(self.processed_dir, filename)
             shutil.move(task.image_path, new_path)
+            logger.debug(f"Moved completed task to processed: {filename}")
             
             # Move metadata too
             meta_file = task.image_path.replace('.jpg', '_metadata.json')
             if os.path.exists(meta_file):
                 new_meta = os.path.join(self.processed_dir, filename.replace('.jpg', '_metadata.json'))
                 shutil.move(meta_file, new_meta)
+                logger.debug(f"Moved metadata file: {os.path.basename(meta_file)}")
         
         self.currently_annotating = None
             
@@ -205,8 +212,10 @@ class HumanAnnotationInterface:
                 # Create Gemini annotator for AI suggestions
                 self.gemini_annotator = AnnotatorFactory.create_gemini_annotator()
                 logger.info(f"Initialized AI annotator: {self.gemini_annotator.is_available()}")
+                logger.debug(f"AI annotator config: {self.gemini_annotator.get_model_info()}")
             except Exception as e:
                 logger.warning(f"Failed to initialize AI annotator: {e}")
+                logger.debug(f"AI annotator initialization error: {type(e).__name__}: {str(e)}")
                 self.use_ai_annotator = False
         
         # Statistics
@@ -380,6 +389,28 @@ class HumanAnnotationInterface:
                 auto_refresh = gr.Checkbox(label="Auto-refresh (5s)", value=True)
                 save_model_btn = gr.Button("💾 Save Model")
             
+            interface.load(
+                None,
+                None,
+                None,
+                js="""
+                function() {
+                    document.addEventListener('keydown', function(e) {
+                        if (e.ctrlKey && e.key === 'a') {
+                            e.preventDefault();
+                            document.querySelector('button[id*="auto_ai_btn"]').click();
+                        } else if (e.ctrlKey && e.key === 's') {
+                            e.preventDefault();
+                            document.querySelector('button[id*="submit_btn"]').click();
+                        } else if (e.ctrlKey && e.key === 'k') {
+                            e.preventDefault();
+                            document.querySelector('button[id*="skip_btn"]').click();
+                        }
+                    });
+                }
+                """
+            )
+            
             # Event handlers
             def load_next_image():
                 """Load the next image for annotation."""
@@ -387,6 +418,8 @@ class HumanAnnotationInterface:
                 new_tasks = self.annotation_queue.scan_for_tasks()
                 if new_tasks > 0:
                     logger.info(f"Found {new_tasks} new images to annotate")
+                else:
+                    logger.debug("No new images found for annotation")
                 
                 # Get next task
                 self.current_task = self.annotation_queue.get_next_task()
@@ -469,6 +502,7 @@ class HumanAnnotationInterface:
                         source="human"
                     )
                     logger.info(f"Updated KNN with label: {label}")
+                    logger.debug(f"KNN feedback: {self.current_task.knn_prediction or 'unknown'} -> {label}")
                 
                 # Update stats
                 self.stats['total_annotated'] += 1
@@ -489,6 +523,7 @@ class HumanAnnotationInterface:
                 if self.knn:
                     self.knn.save_model()
                     logger.info("Model saved after annotation")
+                    logger.debug(f"Model now has {len(self.knn.get_known_classes())} classes")
                 
                 return f"✅ Annotated as '{label}'", self._format_stats()
             
@@ -517,6 +552,7 @@ class HumanAnnotationInterface:
                         )
                         
                         # Get AI annotation
+                        logger.debug("Requesting AI annotation for current task")
                         result = self.gemini_annotator.annotate(request)
                         self.current_task.ai_annotation = result
                         
@@ -526,9 +562,11 @@ class HumanAnnotationInterface:
                                 ai_text += f"\nProcessing time: {result.processing_time:.1f}s"
                             
                             status_text = f"AI annotation received: {result.label}"
+                            logger.info(f"AI annotation successful: {result.label} (confidence: {result.confidence:.2f})")
                             return ai_text, status_text
                         else:
                             error_msg = result.error_message or "Unknown error"
+                            logger.warning(f"AI annotation failed: {error_msg}")
                             return f"❌ AI annotation failed: {error_msg}", "AI annotation failed"
                     else:
                         return "Annotator system not available", "Import error"

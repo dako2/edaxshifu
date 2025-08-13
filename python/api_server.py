@@ -22,9 +22,9 @@ import numpy as np
 from PIL import Image
 
 from python.edaxshifu.knn_classifier import AdaptiveKNNClassifier, Recognition
+from python.edaxshifu.logging_config import get_logger
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_logger("api_server")
 
 class PredictionRequest(BaseModel):
     image_base64: str
@@ -50,15 +50,38 @@ class HealthResponse(BaseModel):
     known_classes_count: int
     total_samples: int
 
+class AIAnnotationRequest(BaseModel):
+    image_base64: str
+    yolo_detections: Optional[List[str]] = None
+    knn_prediction: Optional[str] = None
+    knn_confidence: Optional[float] = None
+
+class AIAnnotationResponse(BaseModel):
+    label: str
+    confidence: float
+    success: bool
+    processing_time: Optional[float] = None
+    error_message: Optional[str] = None
+    bounding_boxes: Optional[List[Dict[str, Any]]] = None
+
+class BatchAnnotationRequest(BaseModel):
+    images_base64: List[str]
+    
+class BatchAnnotationResponse(BaseModel):
+    results: List[AIAnnotationResponse]
+    total_processed: int
+    total_successful: int
+
 class KNNAPIServer:
     """FastAPI server for KNN model inference."""
     
     def __init__(self, model_path: str = "models/knn_classifier.npz"):
         self.model_path = model_path
         self.knn_classifier = None
+        self.gemini_annotator = None
         self.app = FastAPI(
             title="EdaxShifu KNN API",
-            description="REST API for KNN object recognition inference",
+            description="REST API for KNN object recognition inference and AI annotation",
             version="1.0.0"
         )
         
@@ -72,6 +95,7 @@ class KNNAPIServer:
         
         self._setup_routes()
         self._load_model()
+        self._load_ai_annotator()
     
     def _load_model(self):
         """Load the trained KNN model."""
@@ -94,7 +118,23 @@ class KNNAPIServer:
                 
         except Exception as e:
             logger.error(f"Error initializing KNN classifier: {e}")
+            logger.debug(f"KNN initialization error details: {type(e).__name__}: {str(e)}")
             raise
+    
+    def _load_ai_annotator(self):
+        """Load the AI annotator for enhanced annotation features."""
+        try:
+            from python.edaxshifu.annotators import AnnotatorFactory
+            self.gemini_annotator = AnnotatorFactory.create_gemini_annotator()
+            if self.gemini_annotator.is_available():
+                logger.info("AI annotator (Gemini) initialized and available")
+            else:
+                logger.info("AI annotator initialized but API key not available")
+                logger.debug("Set GEMINI_API_KEY environment variable to enable AI annotation endpoints")
+        except Exception as e:
+            logger.warning(f"Failed to initialize AI annotator: {e}")
+            logger.debug(f"AI annotator initialization error: {type(e).__name__}: {str(e)}")
+            self.gemini_annotator = None
     
     def _setup_routes(self):
         """Setup FastAPI routes."""
@@ -277,6 +317,161 @@ class KNNAPIServer:
                 "status": "success",
                 "message": f"Confidence threshold updated to {threshold}",
                 "new_threshold": threshold
+            }
+        
+        @self.app.post("/annotate/ai", response_model=AIAnnotationResponse)
+        async def ai_annotate_image(request: AIAnnotationRequest):
+            """Get AI annotation for an image using Gemini."""
+            if not self.gemini_annotator or not self.gemini_annotator.is_available():
+                raise HTTPException(
+                    status_code=503,
+                    detail="AI annotator not available (check GEMINI_API_KEY)"
+                )
+            
+            try:
+                from python.edaxshifu.annotators import AnnotationRequest
+                
+                image_data = base64.b64decode(request.image_base64)
+                image = Image.open(io.BytesIO(image_data))
+                
+                img_array = np.array(image)
+                if len(img_array.shape) == 2:  # Grayscale
+                    img_array = cv2.cvtColor(img_array, cv2.COLOR_GRAY2BGR)
+                elif img_array.shape[2] == 4:  # RGBA
+                    img_array = cv2.cvtColor(img_array, cv2.COLOR_RGBA2BGR)
+                else:  # RGB
+                    img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+                
+                # Create annotation request
+                annotation_request = AnnotationRequest(
+                    image=img_array,
+                    image_path="",
+                    metadata={},
+                    yolo_detections=request.yolo_detections or [],
+                    knn_prediction=request.knn_prediction,
+                    knn_confidence=request.knn_confidence,
+                    timestamp=datetime.now().isoformat()
+                )
+                
+                # Get AI annotation
+                result = self.gemini_annotator.annotate(annotation_request)
+                
+                logger.info(f"AI annotation via API: {result.label} (success: {result.success})")
+                
+                return AIAnnotationResponse(
+                    label=result.label,
+                    confidence=result.confidence,
+                    success=result.success,
+                    processing_time=result.processing_time,
+                    error_message=result.error_message,
+                    bounding_boxes=result.bounding_boxes
+                )
+                
+            except Exception as e:
+                logger.error(f"AI annotation API error: {e}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Error processing AI annotation: {str(e)}"
+                )
+        
+        @self.app.post("/annotate/batch", response_model=BatchAnnotationResponse)
+        async def batch_ai_annotate(request: BatchAnnotationRequest):
+            """Batch AI annotation for multiple images."""
+            if not self.gemini_annotator or not self.gemini_annotator.is_available():
+                raise HTTPException(
+                    status_code=503,
+                    detail="AI annotator not available (check GEMINI_API_KEY)"
+                )
+            
+            try:
+                from python.edaxshifu.annotators import AnnotationRequest
+                
+                results = []
+                successful = 0
+                
+                for i, image_base64 in enumerate(request.images_base64):
+                    try:
+                        image_data = base64.b64decode(image_base64)
+                        image = Image.open(io.BytesIO(image_data))
+                        
+                        img_array = np.array(image)
+                        if len(img_array.shape) == 2:  # Grayscale
+                            img_array = cv2.cvtColor(img_array, cv2.COLOR_GRAY2BGR)
+                        elif img_array.shape[2] == 4:  # RGBA
+                            img_array = cv2.cvtColor(img_array, cv2.COLOR_RGBA2BGR)
+                        else:  # RGB
+                            img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+                        
+                        # Create annotation request
+                        annotation_request = AnnotationRequest(
+                            image=img_array,
+                            image_path=f"batch_image_{i}",
+                            metadata={},
+                            yolo_detections=[],
+                            knn_prediction=None,
+                            knn_confidence=0.0,
+                            timestamp=datetime.now().isoformat()
+                        )
+                        
+                        # Get AI annotation
+                        result = self.gemini_annotator.annotate(annotation_request)
+                        
+                        if result.success:
+                            successful += 1
+                        
+                        results.append(AIAnnotationResponse(
+                            label=result.label,
+                            confidence=result.confidence,
+                            success=result.success,
+                            processing_time=result.processing_time,
+                            error_message=result.error_message,
+                            bounding_boxes=result.bounding_boxes
+                        ))
+                        
+                    except Exception as e:
+                        logger.warning(f"Batch annotation failed for image {i}: {e}")
+                        results.append(AIAnnotationResponse(
+                            label="error",
+                            confidence=0.0,
+                            success=False,
+                            error_message=str(e)
+                        ))
+                
+                logger.info(f"Batch AI annotation completed: {successful}/{len(request.images_base64)} successful")
+                
+                return BatchAnnotationResponse(
+                    results=results,
+                    total_processed=len(request.images_base64),
+                    total_successful=successful
+                )
+                
+            except Exception as e:
+                logger.error(f"Batch AI annotation error: {e}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Error processing batch annotation: {str(e)}"
+                )
+        
+        @self.app.get("/annotate/status")
+        async def ai_annotator_status():
+            """Check AI annotator availability and status."""
+            if not self.gemini_annotator:
+                return {
+                    "available": False,
+                    "status": "not_initialized",
+                    "message": "AI annotator not initialized"
+                }
+            
+            available = self.gemini_annotator.is_available()
+            model_info = self.gemini_annotator.get_model_info()
+            stats = self.gemini_annotator.get_stats()
+            
+            return {
+                "available": available,
+                "status": "ready" if available else "api_key_missing",
+                "message": "AI annotator ready" if available else "API key not configured",
+                "model_info": model_info,
+                "stats": stats
             }
 
 def create_app(model_path: str = "models/knn_classifier.npz") -> FastAPI:
