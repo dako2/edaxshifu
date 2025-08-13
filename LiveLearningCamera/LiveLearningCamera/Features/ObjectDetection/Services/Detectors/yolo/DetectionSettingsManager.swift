@@ -91,7 +91,7 @@ class DetectionSettingsManager: ObservableObject {
     private init() {
         self.useCOCOLabels = UserDefaults.standard.object(forKey: "useCOCOLabels") as? Bool ?? true
         self.showClassification = UserDefaults.standard.object(forKey: "showClassification") as? Bool ?? true
-        self.confidenceThreshold = UserDefaults.standard.object(forKey: "confidenceThreshold") as? Float ?? 0.5
+        self.confidenceThreshold = UserDefaults.standard.object(forKey: "confidenceThreshold") as? Float ?? 0.25
         self.showConfidence = UserDefaults.standard.object(forKey: "showConfidence") as? Bool ?? true
         self.showFPS = UserDefaults.standard.object(forKey: "showFPS") as? Bool ?? true
         self.captureInterval = UserDefaults.standard.object(forKey: "captureInterval") as? TimeInterval ?? 1.0

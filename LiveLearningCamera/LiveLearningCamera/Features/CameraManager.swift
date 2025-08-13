@@ -31,6 +31,26 @@ class CameraManager: NSObject, ObservableObject {
     override init() {
         super.init()
         checkAuthorization()
+        setupMemoryWarningObserver()
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    private func setupMemoryWarningObserver() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleMemoryWarning),
+            name: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil
+        )
+    }
+    
+    @objc private func handleMemoryWarning() {
+        // Clear current frame to free memory
+        currentFrame = nil
+        capturedImage = nil
     }
     
     // MARK: - Authorization
@@ -93,6 +113,7 @@ class CameraManager: NSObject, ObservableObject {
         videoDataOutput.videoSettings = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
         ]
+        videoDataOutput.alwaysDiscardsLateVideoFrames = true  // Drop frames if processing is slow
         
         if session.canAddOutput(videoDataOutput) {
             session.addOutput(videoDataOutput)
@@ -230,10 +251,14 @@ extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        
-        DispatchQueue.main.async {
-            self.currentFrame = ciImage
+        // Create CIImage in autorelease pool to ensure cleanup
+        autoreleasepool {
+            let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+            
+            DispatchQueue.main.async { [weak self] in
+                // Only keep the latest frame, release previous
+                self?.currentFrame = ciImage
+            }
         }
     }
 }

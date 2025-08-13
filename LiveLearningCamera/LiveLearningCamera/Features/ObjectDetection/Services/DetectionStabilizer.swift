@@ -3,7 +3,7 @@
 //  LiveLearningCamera
 //
 //  Improves detection stability and handles dropped objects
-//
+//  DetectionStabilizer.swift is actively used by MLPipeline.swift at line 28. The MLPipeline creates an instance of DetectionStabilizer to help stabilize object detections across frames, reducing flickering and false positives.
 
 import Foundation
 import CoreGraphics
@@ -12,18 +12,21 @@ import Vision
 // MARK: - Detection Stabilizer
 class DetectionStabilizer {
     
-    // Configuration
-    private let maxFramesWithoutDetection = 5  // Keep object alive for 5 frames without detection
-    private let minDetectionStreak = 2         // Require 2 consecutive detections to confirm
-    private let confidenceDecayRate: Float = 0.95  // Decay confidence when not detected
-    private let iouThresholdForMatch: Float = 0.3  // Lower threshold for matching (more forgiving)
-    private let positionSmoothingFactor: Float = 0.7  // Smooth position changes
-    private let confidenceSmoothingFactor: Float = 0.8  // Smooth confidence changes
+    // Configuration - REDUCED FOR MEMORY
+    private let maxFramesWithoutDetection = 2  // Reduced from 5
+    private let minDetectionStreak = 2
+    private let confidenceDecayRate: Float = 0.9  // Faster decay
+    private let iouThresholdForMatch: Float = 0.3
+    private let positionSmoothingFactor: Float = 0.7
+    private let confidenceSmoothingFactor: Float = 0.8
+    private let maxTrackedObjects = 15  // Hard limit
+    private let maxCandidates = 10  // Hard limit
     
-    // Tracking state
+    // Tracking state - with memory limits
     private var trackedObjects = [UUID: StabilizedObject]()
     private var candidateObjects = [UUID: CandidateObject]()
     private var frameCount = 0
+    private var lastCleanupFrame = 0
     
     // MARK: - Main Stabilization
     func stabilize(_ detections: [Detection]) -> [Detection] {
@@ -125,6 +128,9 @@ class DetectionStabilizer {
     }
     
     private func handleNewDetection(_ detection: Detection) {
+        // Don't add if at capacity
+        guard candidateObjects.count < maxCandidates else { return }
+        
         // Check if it matches a candidate
         for (id, candidate) in candidateObjects {
             if candidate.label == detection.label {
@@ -140,7 +146,7 @@ class DetectionStabilizer {
             }
         }
         
-        // Create new candidate
+        // Create new candidate only if under limit
         let candidate = CandidateObject(
             id: UUID(),
             label: detection.label,
@@ -179,6 +185,9 @@ class DetectionStabilizer {
     
     // MARK: - Candidate Promotion
     private func promoteConfirmedCandidates() {
+        // Don't promote if at tracked object limit
+        guard trackedObjects.count < maxTrackedObjects else { return }
+        
         var toPromote = [UUID]()
         
         for (id, candidate) in candidateObjects {
@@ -199,6 +208,11 @@ class DetectionStabilizer {
                 )
                 trackedObjects[id] = tracked
                 toPromote.append(id)
+                
+                // Stop if we hit the limit
+                if trackedObjects.count >= maxTrackedObjects {
+                    break
+                }
             }
         }
         
@@ -223,16 +237,30 @@ class DetectionStabilizer {
             trackedObjects.removeValue(forKey: id)
         }
         
+        // Enforce max tracked objects limit
+        if trackedObjects.count > maxTrackedObjects {
+            let sorted = trackedObjects.sorted { $0.value.confidence > $1.value.confidence }
+            let toKeep = sorted.prefix(maxTrackedObjects)
+            trackedObjects = Dictionary(uniqueKeysWithValues: toKeep.map { ($0.key, $0.value) })
+        }
+        
         // Remove old candidates
         var staleCandidates = [UUID]()
         for (id, candidate) in candidateObjects {
-            if frameCount - candidate.lastSeenFrame > 3 {
+            if frameCount - candidate.lastSeenFrame > 2 {  // Reduced from 3
                 staleCandidates.append(id)
             }
         }
         
         for id in staleCandidates {
             candidateObjects.removeValue(forKey: id)
+        }
+        
+        // Enforce max candidates limit
+        if candidateObjects.count > maxCandidates {
+            let sorted = candidateObjects.sorted { $0.value.lastSeenFrame > $1.value.lastSeenFrame }
+            let toKeep = sorted.prefix(maxCandidates)
+            candidateObjects = Dictionary(uniqueKeysWithValues: toKeep.map { ($0.key, $0.value) })
         }
     }
     

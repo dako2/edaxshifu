@@ -34,6 +34,9 @@ class YOLODetectionService: ObservableObject {
     // private var mobileViTModel: VNCoreMLModel?
     var confidenceThreshold: Float
     private let iouThreshold: Float
+    private static var hasLoggedShape = false
+    private static var hasLoggedOutputs = false
+    private static var hasLoggedAllClasses = false
     
     // Settings
     private let settings = DetectionSettingsManager.shared
@@ -53,7 +56,7 @@ class YOLODetectionService: ObservableObject {
     init(iouThreshold: Float = 0.4) {
         // Lower confidence threshold to catch more detections
         // The stabilizer will handle false positives
-        self.confidenceThreshold = max(0.25, settings.confidenceThreshold * 0.7)
+        self.confidenceThreshold = max(0.15, settings.confidenceThreshold * 0.5)
         self.iouThreshold = iouThreshold
         loadModel()
     }
@@ -174,50 +177,183 @@ class YOLODetectionService: ObservableObject {
     
     // MARK: - Process YOLOv11 Specific Results
     private func processYOLOv11Results(_ results: [Any]?) -> [Detection] {
-        guard let results = results as? [VNCoreMLFeatureValueObservation],
-              let firstResult = results.first,
-              let multiArray = firstResult.featureValue.multiArrayValue else {
+        guard let results = results as? [VNCoreMLFeatureValueObservation] else {
             return []
         }
         
+        // YOLOv11 has two outputs: confidence and coordinates
+        var confidenceArray: MLMultiArray?
+        var coordinatesArray: MLMultiArray?
+        
+        // Debug: Log what outputs we receive
+        if !YOLODetectionService.hasLoggedOutputs {
+            print("🔍 YOLO Model has \(results.count) outputs:")
+            for (i, result) in results.enumerated() {
+                print("   Output \(i): \(result.featureName ?? "unnamed")")
+            }
+            YOLODetectionService.hasLoggedOutputs = true
+        }
+        
+        for result in results {
+            let featureName = result.featureName ?? ""
+            if featureName.contains("confidence") {
+                confidenceArray = result.featureValue.multiArrayValue
+            } else if featureName.contains("coordinates") {
+                coordinatesArray = result.featureValue.multiArrayValue
+            }
+        }
+        
+        // If we don't have named outputs, assume it's the raw format
+        if confidenceArray == nil && coordinatesArray == nil && results.count > 0 {
+            let multiArray = results[0].featureValue.multiArrayValue
+            return processYOLOv11RawOutput(multiArray)
+        }
+        
+        // Process the confidence and coordinates arrays
+        guard let confidence = confidenceArray,
+              let coordinates = coordinatesArray else {
+            print("⚠️ YOLO: Missing confidence or coordinates output")
+            return []
+        }
+        
+        return processYOLOv11SeparateOutputs(confidence: confidence, coordinates: coordinates)
+    }
+    
+    // Process when we have separate confidence and coordinates
+    private func processYOLOv11SeparateOutputs(confidence: MLMultiArray, coordinates: MLMultiArray) -> [Detection] {
+        var detections: [Detection] = []
+        
+        // Log shapes
+        print("📦 YOLO Outputs - Confidence shape: \(confidence.shape), Coordinates shape: \(coordinates.shape)")
+        
+        // confidence shape: [num_boxes, num_classes]
+        // coordinates shape: [num_boxes, 4]
+        
+        let numBoxes = confidence.shape[0].intValue
+        let numClasses = confidence.shape[1].intValue
+        
+        print("   Processing \(numBoxes) boxes with \(numClasses) classes")
+        
+        for i in 0..<min(numBoxes, 100) {  // Limit to first 100 boxes
+            // Get coordinates [x, y, width, height] - already normalized
+            let x = coordinates[[i as NSNumber, 0]].floatValue
+            let y = coordinates[[i as NSNumber, 1]].floatValue
+            let w = coordinates[[i as NSNumber, 2]].floatValue
+            let h = coordinates[[i as NSNumber, 3]].floatValue
+            
+            // Find best class
+            var maxScore: Float = 0
+            var maxClass = 0
+            
+            for c in 0..<numClasses {
+                let score = confidence[[i as NSNumber, c as NSNumber]].floatValue
+                if score > maxScore {
+                    maxScore = score
+                    maxClass = c
+                }
+            }
+            
+            // Check threshold
+            guard maxScore >= settings.confidenceThreshold else { continue }
+            
+            // Skip filtered classes
+            guard settings.isClassEnabled(maxClass) else { continue }
+            
+            let bbox = CGRect(
+                x: CGFloat(x - w/2),
+                y: CGFloat(y - h/2),
+                width: CGFloat(w),
+                height: CGFloat(h)
+            )
+            
+            let label = cocoDataset.getClassName(byID: maxClass)
+            
+            detections.append(Detection(
+                label: label,
+                confidence: maxScore,
+                boundingBox: bbox,
+                classIndex: maxClass
+            ))
+            
+            // Log non-person detections
+            if maxClass != 0 {
+                print("🎯 Found: \(label) with \(Int(maxScore * 100))% confidence")
+            }
+        }
+        
+        return applyNMS(to: detections)
+    }
+    
+    // Original processing for raw output
+    private func processYOLOv11RawOutput(_ multiArray: MLMultiArray?) -> [Detection] {
+        guard let multiArray = multiArray else { return [] }
+        
         // YOLOv11 output format: [1, 84, 8400] or similar
-        // First 4 values: x, y, w, h
-        // Next 80 values: class scores
+        // 84 = 4 (bbox) + 80 (classes)
+        // 8400 = number of predictions
         
         var detections: [Detection] = []
         let shape = multiArray.shape
         
+        // Debug: Log model output shape once
+        if !YOLODetectionService.hasLoggedShape {
+            print("🔍 YOLO Model Output Shape: \(shape)")
+            print("   Dimensions: \(multiArray.shape.map { $0.intValue })")
+            YOLODetectionService.hasLoggedShape = true
+        }
+        
         // Parse based on output shape
         if shape.count == 3 {
-            let numPredictions = shape[2].intValue
-            let numClasses = 80
+            let batchSize = shape[0].intValue  // Should be 1
+            let featureSize = shape[1].intValue  // Should be 84 (4 bbox + 80 classes)
+            let numPredictions = shape[2].intValue  // Should be 8400
+            let numClasses = featureSize - 4  // Should be 80
             
-            for i in 0..<numPredictions {
-                // Extract bbox and scores
+            print("📊 Processing YOLO output: batch=\(batchSize), features=\(featureSize), predictions=\(numPredictions), classes=\(numClasses)")
+            
+            // Process only top predictions to avoid processing thousands of low-confidence boxes
+            for i in 0..<min(numPredictions, 300) {
+                // Extract bbox - coordinates are at indices 0-3 for each prediction
                 let x = multiArray[[0, 0, i] as [NSNumber]].floatValue
                 let y = multiArray[[0, 1, i] as [NSNumber]].floatValue
                 let w = multiArray[[0, 2, i] as [NSNumber]].floatValue
                 let h = multiArray[[0, 3, i] as [NSNumber]].floatValue
                 
-                // Find best class
+                // Find best class - class scores start at index 4
                 var maxScore: Float = 0
                 var maxClass = 0
+                var topClasses: [(class: Int, score: Float)] = []
                 
                 for c in 0..<numClasses {
                     let score = multiArray[[0, 4 + c, i] as [NSNumber]].floatValue
+                    
+                    // Track top scoring classes for debugging
+                    if score > 0.2 {
+                        topClasses.append((class: c, score: score))
+                    }
+                    
                     if score > maxScore {
                         maxScore = score
                         maxClass = c
                     }
                 }
                 
-                // Check confidence threshold (use current settings value)
+                // Debug: Log high-confidence detections with multiple class options
+                if topClasses.count > 1 && maxScore > 0.3 {
+                    print("🔍 Box \(i) has multiple high-confidence classes:")
+                    for (cls, score) in topClasses.sorted(by: { $0.score > $1.score }).prefix(3) {
+                        let className = cocoDataset.getClassName(byID: cls)
+                        print("   - \(className) (class \(cls)): \(Int(score * 100))%")
+                    }
+                }
+                
+                // Check confidence threshold
                 guard maxScore >= settings.confidenceThreshold else { continue }
                 
                 // Skip filtered classes
                 guard settings.isClassEnabled(maxClass) else { continue }
                 
-                // Convert to normalized coordinates
+                // Convert to normalized coordinates (YOLO uses center coordinates)
                 let bbox = CGRect(
                     x: CGFloat(x - w/2) / 640.0,
                     y: CGFloat(y - h/2) / 640.0,
@@ -225,10 +361,18 @@ class YOLODetectionService: ObservableObject {
                     height: CGFloat(h) / 640.0
                 )
                 
+                // Ensure bounding box is within valid range
+                guard bbox.minX >= 0, bbox.minY >= 0,
+                      bbox.maxX <= 1, bbox.maxY <= 1,
+                      bbox.width > 0, bbox.height > 0 else { continue }
+                
                 let label = !settings.showClassification ? "object" :
-                    (settings.useCOCOLabels ? 
-                    cocoDataset.getClassName(byID: maxClass) : 
-                    "class_\(maxClass)")
+                    cocoDataset.getClassName(byID: maxClass)
+                
+                // Log non-person detections for debugging
+                if maxClass != 0 {
+                    print("✅ Detected: \(label) (class \(maxClass)) with \(Int(maxScore * 100))% confidence at box \(i)")
+                }
                 
                 detections.append(Detection(
                     label: label,
@@ -236,6 +380,16 @@ class YOLODetectionService: ObservableObject {
                     boundingBox: bbox,
                     classIndex: maxClass
                 ))
+            }
+            
+            print("📦 Total detections before NMS: \(detections.count)")
+            if detections.count > 0 {
+                let classDistribution = Dictionary(grouping: detections, by: { $0.classIndex })
+                print("📊 Class distribution:")
+                for (classId, dets) in classDistribution {
+                    let className = cocoDataset.getClassName(byID: classId)
+                    print("   - \(className): \(dets.count) detections")
+                }
             }
         }
         

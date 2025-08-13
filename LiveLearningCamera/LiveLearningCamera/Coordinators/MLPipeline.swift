@@ -75,6 +75,9 @@ class MLPipeline: ObservableObject {
     // MARK: - Processing Queue
     private let processingQueue = DispatchQueue(label: "com.app.mlpipeline", qos: .userInitiated)
     private var cancellables = Set<AnyCancellable>()
+    private var isProcessingFrame = false  // Prevent concurrent processing
+    private var frameSkipCounter = 0
+    private let frameSkipRate = 1  // Process every other frame to reduce load
     
     // MARK: - Initialization
     private init() {
@@ -142,39 +145,36 @@ class MLPipeline: ObservableObject {
     
     // MARK: - Thumbnail Extraction
     private func extractThumbnail(from ciImage: CIImage, boundingBox: CGRect, padding: CGFloat = 10) -> Data? {
-        // Convert normalized coordinates to pixel coordinates
-        let imageWidth = ciImage.extent.width
-        let imageHeight = ciImage.extent.height
-        
-        // Calculate crop rectangle with padding
-        let x = max(0, boundingBox.origin.x * imageWidth - padding)
-        let y = max(0, boundingBox.origin.y * imageHeight - padding)
-        let width = min(imageWidth - x, boundingBox.width * imageWidth + padding * 2)
-        let height = min(imageHeight - y, boundingBox.height * imageHeight + padding * 2)
-        
-        let cropRect = CGRect(x: x, y: y, width: width, height: height)
-        
-        // Crop the image
-        let croppedImage = ciImage.cropped(to: cropRect)
-        
-        // Scale down to thumbnail size (max 200x200)
-        let targetSize: CGFloat = 200
-        let scale = min(targetSize / width, targetSize / height)
-        let scaledImage = croppedImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        
-        // Convert to UIImage and then to Data
-        let context = CIContext()
-        guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else {
-            return nil
-        }
-        
-        let uiImage = UIImage(cgImage: cgImage)
-        return uiImage.jpegData(compressionQuality: 0.7)
+        // SKIP THUMBNAILS TO SAVE MEMORY
+        return nil  // Disabled for memory optimization
     }
     
     // MARK: - Main Processing Entry Point
     // Match OptimizedDetectionPipeline signature for compatibility
     func process(frame ciImage: CIImage) async -> ProcessingResult {
+        // Skip frames to reduce memory pressure
+        frameSkipCounter += 1
+        if frameSkipCounter % (frameSkipRate + 1) != 0 {
+            return ProcessingResult(
+                trackedObjects: self.trackedObjects,
+                handDetections: self.handDetections,
+                sceneContext: self.sceneContext,
+                metrics: self.performanceMetrics
+            )
+        }
+        
+        // Prevent concurrent processing
+        guard !isProcessingFrame else {
+            return ProcessingResult(
+                trackedObjects: self.trackedObjects,
+                handDetections: self.handDetections,
+                sceneContext: self.sceneContext,
+                metrics: self.performanceMetrics
+            )
+        }
+        isProcessingFrame = true
+        defer { isProcessingFrame = false }
+        
         let startTime = Date()
         
         // Mark as processing
@@ -336,9 +336,10 @@ class MLPipeline: ObservableObject {
             let context = CIContext()
             guard let cgImage = context.createCGImage(frame, from: frame.extent) else {
                 // Fallback if we can't create CGImage
-                let fallbackTracked = stabilized.map { detection in
+                // Limit to top 10 detections
+                let topDetections = stabilized.sorted { $0.confidence > $1.confidence }.prefix(10)
+                let fallbackTracked = topDetections.map { detection in
                     let persistentID = objectIDTracker.getOrCreateID(for: detection)
-                    let thumbnail = extractThumbnail(from: frame, boundingBox: detection.boundingBox)
                     return MemoryTrackedObject(
                         id: persistentID,
                         label: detection.label,
@@ -346,17 +347,18 @@ class MLPipeline: ObservableObject {
                         lastSeen: Date(),
                         boundingBox: detection.boundingBox,
                         confidence: detection.confidence,
-                        thumbnail: thumbnail
+                        thumbnail: nil  // No thumbnails
                     )
                 }
-                return (fallbackTracked, stabilized)
+                return (Array(fallbackTracked), stabilized)
             }
             
             // Process each detection through simple ID tracking
-            // (ObjectTracker.processDetection is async, can't use it in sync context)
-            for detection in stabilized {
+            // Limit to top 10 detections by confidence to save memory
+            let topDetections = stabilized.sorted { $0.confidence > $1.confidence }.prefix(10)
+            for detection in topDetections {
                 let persistentID = objectIDTracker.getOrCreateID(for: detection)
-                let thumbnail = extractThumbnail(from: frame, boundingBox: detection.boundingBox)
+                // Skip thumbnails to save memory
                 let memoryObj = MemoryTrackedObject(
                     id: persistentID,
                     label: detection.label,
@@ -364,7 +366,7 @@ class MLPipeline: ObservableObject {
                     lastSeen: Date(),
                     boundingBox: detection.boundingBox,
                     confidence: detection.confidence,
-                    thumbnail: thumbnail
+                    thumbnail: nil  // No thumbnails
                 )
                 tracked.append(memoryObj)
             }
@@ -374,9 +376,10 @@ class MLPipeline: ObservableObject {
             
         } else {
             // Fallback: Use simple position-based ID tracking
-            tracked = stabilized.map { detection in
+            // Limit to top 10 detections
+            let topDetections = stabilized.sorted { $0.confidence > $1.confidence }.prefix(10)
+            tracked = topDetections.map { detection in
                 let persistentID = objectIDTracker.getOrCreateID(for: detection)
-                let thumbnail = extractThumbnail(from: frame, boundingBox: detection.boundingBox)
                 return MemoryTrackedObject(
                     id: persistentID,
                     label: detection.label,
@@ -384,7 +387,7 @@ class MLPipeline: ObservableObject {
                     lastSeen: Date(),
                     boundingBox: detection.boundingBox,
                     confidence: detection.confidence,
-                    thumbnail: thumbnail
+                    thumbnail: nil  // No thumbnails
                 )
             }
         }

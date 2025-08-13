@@ -17,15 +17,16 @@ class ObjectMemoryManager {
     // Singleton
     static let shared = ObjectMemoryManager()
     
-    // Memory configuration
-    private let shortTermCapacity = 100
-    private let shortTermTTL: TimeInterval = 60
-    private let longTermThreshold = 5 // Observations before persisting
+    // Memory configuration - REDUCED FOR MEMORY
+    private let shortTermCapacity = 20  // Reduced from 100
+    private let shortTermTTL: TimeInterval = 30  // Reduced from 60
+    private let longTermThreshold = 10 // Increased from 5 to reduce persistence
     
-    // Caches
-    private var shortTermCache = ObjectLRUCache(capacity: 100)
+    // Caches - REDUCED SIZES
+    private var shortTermCache = ObjectLRUCache(capacity: 20)  // Reduced from 100
     private var identityMap = [String: UUID]() // Visual signature -> Object ID
     private let identityMapLock = NSLock()
+    private let maxIdentityMapSize = 50  // Limit identity map size
     
     // Performance metrics
     private(set) var processingTime: TimeInterval = 0
@@ -76,6 +77,16 @@ class ObjectMemoryManager {
         
         identityMapLock.lock()
         identityMap[signature] = tracked.id
+        // Limit identity map size
+        if identityMap.count > maxIdentityMapSize {
+            // Remove oldest entries
+            let toRemove = identityMap.count - maxIdentityMapSize
+            for _ in 0..<toRemove {
+                if let firstKey = identityMap.keys.first {
+                    identityMap.removeValue(forKey: firstKey)
+                }
+            }
+        }
         identityMapLock.unlock()
         
         // Update metrics
@@ -86,15 +97,19 @@ class ObjectMemoryManager {
     
     // MARK: - Batch Processing
     func processBatch(_ detections: [Detection], frame: CIImage) -> [MemoryTrackedObject] {
+        // Limit batch size for memory
+        let maxBatchSize = 10
+        let limitedDetections = Array(detections.prefix(maxBatchSize))
+        
         // Sort by confidence and size for priority processing
-        let prioritized = detections.sorted { det1, det2 in
+        let prioritized = limitedDetections.sorted { det1, det2 in
             let score1 = det1.confidence * Float(det1.boundingBox.width * det1.boundingBox.height)
             let score2 = det2.confidence * Float(det2.boundingBox.width * det2.boundingBox.height)
             return score1 > score2
         }
         
         // Process top N based on available resources
-        let maxProcess = min(detections.count, getMaxProcessingCapacity())
+        let maxProcess = min(prioritized.count, getMaxProcessingCapacity())
         return prioritized.prefix(maxProcess).map { process($0, frame: frame) }
     }
     
@@ -215,17 +230,19 @@ class ObjectMemoryManager {
     }
     
     private func getMaxProcessingCapacity() -> Int {
-        // Adjust based on device performance
+        // More conservative limits
         let memoryPressure = ProcessInfo.processInfo.thermalState
         switch memoryPressure {
-        case .nominal, .fair:
-            return 10
+        case .nominal:
+            return 8  // Reduced from 10
+        case .fair:
+            return 5  // Reduced from 10
         case .serious:
-            return 5
+            return 3  // Reduced from 5
         case .critical:
-            return 3
+            return 1  // Reduced from 3
         @unknown default:
-            return 7
+            return 4  // Reduced from 7
         }
     }
 }
