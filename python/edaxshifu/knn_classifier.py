@@ -14,9 +14,8 @@ from typing import Optional, Dict, List, Tuple, Any
 import logging
 from dataclasses import dataclass
 
-from .logging_config import get_logger
-
-logger = get_logger("knn_classifier")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -62,8 +61,7 @@ class KNNObjectClassifier:
         else:
             self.device = device
             
-        logger.info(f"KNN classifier initialized with device: {self.device}")
-        logger.debug(f"KNN config: n_neighbors={n_neighbors}, confidence_threshold={confidence_threshold}, max_samples_per_class={max_samples_per_class}")
+        logger.info(f"Using device: {self.device}")
         
         # Initialize ResNet18 feature extractor
         self._setup_feature_extractor()
@@ -160,11 +158,9 @@ class KNNObjectClassifier:
             
             # Retrain KNN if requested and we have enough samples
             if retrain and len(self.X_train) >= self.n_neighbors:
-                logger.debug(f"Retraining KNN after adding sample for '{label}'")
                 self._retrain_knn()
                 
             logger.info(f"Added sample for '{label}'. Total samples: {len(self.X_train)}")
-            logger.debug(f"Sample counts per class: {self.get_sample_count()}")
     
     def _manage_memory(self):
         """Manage memory by limiting samples per class."""
@@ -272,7 +268,6 @@ class KNNObjectClassifier:
         """
         with self._lock:
             if not self.trained or len(self.X_train) == 0:
-                logger.debug("KNN prediction requested but model not trained or no training data")
                 return Recognition(
                     label="unknown",
                     confidence=0.0,
@@ -326,12 +321,8 @@ class KNNObjectClassifier:
             # Check if known based on adjusted confidence
             is_known = confidence >= self.confidence_threshold
             
-            final_label = pred_label if is_known else "unknown"
-            logger.debug(f"KNN prediction: '{final_label}' (confidence: {confidence:.3f}, is_known: {is_known})")
-            logger.debug(f"All scores: {all_scores}")
-            
             return Recognition(
-                label=final_label,
+                label=pred_label if is_known else "unknown",
                 confidence=float(confidence),
                 all_scores=all_scores,
                 embedding=embedding,
@@ -373,7 +364,6 @@ class KNNObjectClassifier:
             np.savez_compressed(save_path, **model_data)
                 
             logger.info(f"Model saved to {save_path} ({len(self.X_train)} samples)")
-            logger.debug(f"Saved model data: {list(model_data.keys())}")
         
     def load_model(self, path: Optional[str] = None) -> bool:
         """Load a trained model from disk."""
@@ -403,10 +393,8 @@ class KNNObjectClassifier:
                 # Retrain KNN
                 if len(self.X_train) > 0:
                     self._retrain_knn()
-                    logger.debug(f"KNN retrained after loading model")
                     
                 logger.info(f"Model loaded from {load_path}. {len(self.X_train)} samples")
-                logger.debug(f"Loaded classes: {self.get_known_classes()}")
                 return True
                 
             except Exception as e:
@@ -466,11 +454,9 @@ class AdaptiveKNNClassifier(KNNObjectClassifier):
         
         # Auto-save if needed
         if self.auto_save and len(self.X_train) % self.save_interval == 0:
-            logger.debug(f"Auto-saving model after {len(self.X_train)} samples")
             self.save_model()
             
         logger.info(f"Learned from feedback: {predicted_label} -> {correct_label} (via {source})")
-        logger.debug(f"Feedback history length: {len(self.feedback_history)}")
         
     def get_accuracy_stats(self) -> Dict[str, Any]:
         """Get statistics about classifier performance."""

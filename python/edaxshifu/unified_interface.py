@@ -25,9 +25,9 @@ from .intelligent_capture import IntelligentCaptureSystem
 from .knn_classifier import AdaptiveKNNClassifier
 from .annotators import AnnotatorFactory, AnnotationRequest
 from .annotators.bbox_utils import draw_bounding_boxes, crop_object_from_bbox, crop_all_objects
-from .logging_config import get_logger
 
-logger = get_logger("unified_interface")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class UnifiedEdaxShifu:
@@ -48,10 +48,7 @@ class UnifiedEdaxShifu:
         # Load training samples
         if os.path.exists("assets/images"):
             self.system.knn.add_samples_from_directory("assets/images")
-            logger.info(f"Loaded training samples from assets/images")
-            logger.debug(f"Known classes after loading: {self.system.knn.get_known_classes()}")
-        else:
-            logger.debug("No assets/images directory found for training samples")
+            logger.info(f"Loaded training samples")
         
         # Stream state
         self.streaming = False
@@ -61,11 +58,9 @@ class UnifiedEdaxShifu:
         
         # Connect stream
         if not self.system.stream.connect():
-            logger.error(f"Failed to connect to stream: {rtsp_url}")
-            logger.debug("Check if camera/stream source is available and accessible")
+            logger.error("Failed to connect to stream")
         else:
             logger.info(f"Connected to stream: {rtsp_url}")
-            logger.debug("Stream connection established successfully")
         
         # Stats
         self.stats = {
@@ -81,20 +76,16 @@ class UnifiedEdaxShifu:
             self.gemini_annotator = AnnotatorFactory.create_gemini_annotator()
             if self.gemini_annotator.is_available():
                 logger.info("Gemini annotator initialized and available")
-                logger.debug(f"Gemini model info: {self.gemini_annotator.get_model_info()}")
             else:
                 logger.info("Gemini annotator initialized but API key not available")
-                logger.debug("Set GEMINI_API_KEY environment variable to enable AI features")
         except Exception as e:
             logger.warning(f"Failed to initialize Gemini annotator: {e}")
-            logger.debug(f"Gemini initialization error: {type(e).__name__}: {str(e)}")
         
     def get_frame(self) -> Optional[np.ndarray]:
         """Get the current frame with YOLO detections and KNN recognition."""
         # Read frame from stream
         ret, frame = self.system.stream.read_frame()
         if not ret or frame is None:
-            logger.debug("Failed to read frame from stream")
             return None
         
         # Store original frame
@@ -103,7 +94,6 @@ class UnifiedEdaxShifu:
         
         # Run YOLO detection
         detections = self.system.yolo.detect(frame)
-        logger.debug(f"YOLO detected {len(detections)} objects")
         
         # Process each detection
         for det in detections:
@@ -160,7 +150,6 @@ class UnifiedEdaxShifu:
         # Save capture
         self.last_capture = self.current_frame.copy()
         self.stats['captures'] += 1
-        logger.info(f"Frame captured (total captures: {self.stats['captures']})")
         
         # Run KNN classification on the captured frame
         recognition = self.system.knn.predict(self.last_capture)
@@ -190,7 +179,6 @@ class UnifiedEdaxShifu:
                     )
                     
                     # Get AI annotation
-                    logger.debug("Requesting AI annotation for captured frame")
                     ai_result = self.gemini_annotator.annotate(request)
                     if ai_result.success:
                         ai_suggestion = f" | 🤖 AI suggests: {ai_result.label} ({ai_result.confidence:.2f})"
@@ -203,15 +191,10 @@ class UnifiedEdaxShifu:
                             
                             # Draw bounding boxes on the image for saving
                             self.last_capture = draw_bounding_boxes(self.last_capture, ai_result.bounding_boxes)
-                            logger.debug(f"Drew {bbox_count} bounding boxes on captured image")
                         
                         self.stats['ai_annotations'] += 1
-                        logger.info(f"AI annotation successful: {ai_result.label} (confidence: {ai_result.confidence:.2f})")
-                    else:
-                        logger.warning(f"AI annotation failed: {ai_result.error_message}")
                 except Exception as e:
-                    logger.error(f"AI annotation failed: {type(e).__name__}: {e}")
-                    logger.debug(f"AI annotation error details: {str(e)}")
+                    logger.error(f"AI annotation failed: {e}")
             
             # Save to failed for annotation
             save_dir = "captures/failed"
@@ -273,10 +256,8 @@ class UnifiedEdaxShifu:
         # If no specific objects were cropped, teach the whole image
         if cropped_objects == 0:
             self.system.teach_object(img_array, label)
-            logger.debug(f"Taught whole image as '{label}'")
         
         self.stats['taught'] += cropped_objects if cropped_objects > 0 else 1
-        logger.info(f"Teaching completed: {label} (total taught: {self.stats['taught']})")
         
         # Save model immediately
         self.system.knn.save_model()
@@ -398,7 +379,6 @@ class UnifiedEdaxShifu:
                     # API Key Configuration
                     with gr.Accordion("🔑 API Configuration", open=False):
                         gr.Markdown("Configure Gemini API for AI-powered features")
-                        gr.Markdown("**Keyboard Shortcuts:**\n- **Ctrl+G**: Ask AI\n- **Ctrl+T**: Teach Object\n- **Ctrl+C**: Capture Frame")
                         api_key_input = gr.Textbox(
                             label="Gemini API Key",
                             placeholder="Enter your Gemini API key",
@@ -436,28 +416,6 @@ class UnifiedEdaxShifu:
                     • Teach new objects anytime
                     """
                 )
-            
-            interface.load(
-                None,
-                None,
-                None,
-                js="""
-                function() {
-                    document.addEventListener('keydown', function(e) {
-                        if (e.ctrlKey && e.key === 'g') {
-                            e.preventDefault();
-                            document.querySelector('button[id*="ai_suggest_btn"]').click();
-                        } else if (e.ctrlKey && e.key === 't') {
-                            e.preventDefault();
-                            document.querySelector('button[id*="teach_btn"]').click();
-                        } else if (e.ctrlKey && e.key === 'c') {
-                            e.preventDefault();
-                            document.querySelector('button[id*="capture_btn"]').click();
-                        }
-                    });
-                }
-                """
-            )
             
             # Event handlers
             def stream_frames():
@@ -540,11 +498,9 @@ class UnifiedEdaxShifu:
                     )
                     
                     # Get AI annotation
-                    logger.debug("Getting AI suggestion for uploaded image")
                     result = self.gemini_annotator.annotate(request)
                     if result.success:
                         self.stats['ai_annotations'] += 1
-                        logger.info(f"AI suggestion: {result.label} (confidence: {result.confidence:.2f})")
                         
                         # Store bounding boxes for potential cropping during teaching
                         annotated_image = image  # Default to original image
