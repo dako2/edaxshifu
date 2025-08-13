@@ -12,8 +12,9 @@ from PIL import Image
 import google.generativeai as genai
 
 from .base_annotator import BaseAnnotator, AnnotationResult, AnnotationRequest, AnnotationSource
+from ..logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger("gemini_annotator")
 
 
 class GeminiAnnotator(BaseAnnotator):
@@ -48,6 +49,7 @@ class GeminiAnnotator(BaseAnnotator):
         self.api_key = api_key or os.getenv('GEMINI_API_KEY')
         if not self.api_key:
             logger.warning("No Gemini API key provided. Annotator will be disabled.")
+            logger.debug("Set GEMINI_API_KEY environment variable to enable AI annotation")
             self.enabled = False
             return
         
@@ -61,8 +63,10 @@ class GeminiAnnotator(BaseAnnotator):
             genai.configure(api_key=self.api_key)
             self.model = genai.GenerativeModel(model_name)
             logger.info(f"Initialized Gemini annotator with model {model_name}")
+            logger.debug(f"Gemini config: confidence_threshold={confidence_threshold}, max_retries={max_retries}, timeout={timeout_seconds}s")
         except Exception as e:
             logger.error(f"Failed to initialize Gemini: {e}")
+            logger.debug(f"Gemini initialization error details: {type(e).__name__}: {str(e)}")
             self.enabled = False
     
     def annotate(self, request: AnnotationRequest) -> AnnotationResult:
@@ -76,6 +80,7 @@ class GeminiAnnotator(BaseAnnotator):
             AnnotationResult with Gemini annotation
         """
         if not self.enabled:
+            logger.warning("Gemini annotation requested but annotator is disabled")
             return AnnotationResult(
                 label="error",
                 confidence=0.0,
@@ -85,27 +90,38 @@ class GeminiAnnotator(BaseAnnotator):
             )
         
         start_time = time.time()
+        logger.debug(f"Starting Gemini annotation for image: {request.image_path or 'memory_image'}")
+        logger.debug(f"Request context: yolo_detections={request.yolo_detections}, knn_prediction={request.knn_prediction}")
         
         for attempt in range(self.max_retries):
             try:
+                logger.debug(f"Gemini annotation attempt {attempt + 1}/{self.max_retries}")
+                
                 # Convert image for Gemini
                 pil_image = self._prepare_image(request.image)
+                logger.debug(f"Image prepared for Gemini: size={pil_image.size}, mode={pil_image.mode}")
                 
                 # Create prompt based on context
                 prompt = self._create_prompt(request)
+                logger.debug(f"Generated prompt: {prompt[:100]}...")
                 
                 # Call Gemini
+                api_start = time.time()
                 response = self.model.generate_content([prompt, pil_image])
+                api_time = time.time() - api_start
+                logger.debug(f"Gemini API call completed in {api_time:.2f}s")
                 
                 # Parse response
                 result = self._parse_response(response, request)
                 result.processing_time = time.time() - start_time
                 
+                logger.info(f"Gemini annotation successful: '{result.label}' (confidence: {result.confidence:.2f}, time: {result.processing_time:.2f}s)")
                 self._update_stats(result, result.processing_time)
                 return result
                 
             except Exception as e:
-                logger.warning(f"Gemini annotation attempt {attempt + 1} failed: {e}")
+                logger.warning(f"Gemini annotation attempt {attempt + 1} failed: {type(e).__name__}: {e}")
+                logger.debug(f"Gemini error details: {str(e)}")
                 if attempt == self.max_retries - 1:
                     # Final attempt failed
                     processing_time = time.time() - start_time
@@ -117,11 +133,14 @@ class GeminiAnnotator(BaseAnnotator):
                         error_message=f"Gemini failed after {self.max_retries} attempts: {str(e)}",
                         processing_time=processing_time
                     )
+                    logger.error(f"Gemini annotation failed completely after {self.max_retries} attempts")
                     self._update_stats(result, processing_time)
                     return result
                 
                 # Wait before retry
-                time.sleep(1 * (attempt + 1))  # Exponential backoff
+                retry_delay = 1 * (attempt + 1)
+                logger.debug(f"Waiting {retry_delay}s before retry...")
+                time.sleep(retry_delay)
         
         # Should never reach here
         return AnnotationResult(
@@ -166,10 +185,11 @@ class GeminiAnnotator(BaseAnnotator):
         pil_image = Image.fromarray(image_rgb)
         
         # Resize if too large (Gemini has size limits)
-        max_size = 128
+        max_size = 1024
         if max(pil_image.size) > max_size:
+            original_size = pil_image.size
             pil_image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
-            logger.debug(f"Resized image to {pil_image.size} for Gemini")
+            logger.debug(f"Resized image from {original_size} to {pil_image.size} for Gemini")
         
         return pil_image
     
