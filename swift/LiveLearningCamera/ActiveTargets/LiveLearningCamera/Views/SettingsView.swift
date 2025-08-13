@@ -17,6 +17,7 @@ struct SettingsView: View {
             Form {
                 Section(header: Text("Detection Mode")) {
                     Toggle("Enable Classification", isOn: $settings.showClassification)
+                        .accessibilityIdentifier("enableClassificationToggle")
                     
                     if settings.showClassification {
                         Toggle(isOn: $settings.useCOCOLabels) {
@@ -29,6 +30,7 @@ struct SettingsView: View {
                                     .foregroundColor(.secondary)
                             }
                         }
+                        .accessibilityIdentifier("useCOCOLabelsToggle")
                     } else {
                         Text("All detections shown as 'object'")
                             .font(.caption)
@@ -38,6 +40,7 @@ struct SettingsView: View {
                 
                 Section(header: Text("Class Filter")) {
                     Toggle("Enable Class Filter", isOn: $settings.useClassFilter)
+                        .accessibilityIdentifier("enableClassFilterToggle")
                     
                     if settings.useClassFilter {
                         ForEach(settings.sortedCategoryNames, id: \.self) { category in
@@ -45,6 +48,7 @@ struct SettingsView: View {
                                 get: { settings.isCategoryEnabled(category) },
                                 set: { _ in settings.toggleCategory(category) }
                             ))
+                            .accessibilityIdentifier("category_\(category)")
                         }
                         
                         Text("\(settings.enabledClasses.count) of 80 classes enabled")
@@ -55,11 +59,14 @@ struct SettingsView: View {
                 
                 Section(header: Text("Display Options")) {
                     Toggle("Show Confidence Score", isOn: $settings.showConfidence)
+                        .accessibilityIdentifier("showConfidenceToggle")
                     Toggle("Show FPS Counter", isOn: $settings.showFPS)
+                        .accessibilityIdentifier("showFPSToggle")
                 }
                 
                 Section(header: Text("Capture Settings")) {
                     Toggle("Enable Deduplication", isOn: $settings.enableDeduplication)
+                        .accessibilityIdentifier("enableDeduplicationToggle")
                     
                     VStack(alignment: .leading) {
                         HStack {
@@ -69,6 +76,7 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                         Slider(value: $settings.captureInterval, in: 0.5...5.0, step: 0.5)
+                            .accessibilityIdentifier("captureIntervalSlider")
                         Text("Minimum time between captures to avoid duplicates")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -77,10 +85,13 @@ struct SettingsView: View {
                 
                 Section(header: Text("Hand Tracking")) {
                     Toggle("Enable Hand Tracking", isOn: $settings.enableHandTracking)
+                        .accessibilityIdentifier("enableHandTrackingToggle")
                     
                     if settings.enableHandTracking {
                         Toggle("Show Hand Gestures", isOn: $settings.showHandGestures)
+                            .accessibilityIdentifier("showHandGesturesToggle")
                         Toggle("Show Hand Landmarks", isOn: $settings.showHandLandmarks)
+                            .accessibilityIdentifier("showHandLandmarksToggle")
                         
                         VStack(alignment: .leading) {
                             HStack {
@@ -94,6 +105,7 @@ struct SettingsView: View {
                                 Text("2").tag(2)
                             }
                             .pickerStyle(SegmentedPickerStyle())
+                            .accessibilityIdentifier("maxHandsPicker")
                         }
                         
                         Text("Detects hands with 21 landmarks and gesture recognition")
@@ -111,6 +123,7 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                         Slider(value: $settings.confidenceThreshold, in: 0.1...0.9, step: 0.05)
+                            .accessibilityIdentifier("confidenceThresholdSlider")
                     }
                     Text("Lower values detect more objects but may include false positives")
                         .font(.caption)

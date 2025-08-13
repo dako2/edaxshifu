@@ -238,12 +238,14 @@ struct CameraView: View {
                 // Camera Preview
                 CameraPreview(cameraManager: cameraManager)
                     .ignoresSafeArea()
+                    .accessibilityIdentifier("cameraPreview")
                 
                 // Object Detection Overlay (YOLO)
                 ProfessionalDetectionOverlay(
                     trackedObjects: trackedObjects,
                     imageSize: geometry.size
                 )
+                .accessibilityIdentifier("detectionOverlay")
                 
                 // Hand Tracking Overlay (MediaPipe-style)
                 if settings.enableHandTracking {
@@ -260,6 +262,7 @@ struct CameraView: View {
                 if showStats {
                     HStack {
                         Label("\(trackedObjects.count) objects", systemImage: "eye")
+                            .accessibilityIdentifier("objectCountLabel")
                         Spacer()
                         if isProcessing {
                             ProgressView()
@@ -268,6 +271,7 @@ struct CameraView: View {
                         }
                         if settings.showFPS {
                             Label(String(format: "%.1f FPS", performanceMetrics.fps), systemImage: "speedometer")
+                                .accessibilityIdentifier("fpsLabel")
                         }
                         
                         // History Button
@@ -277,6 +281,7 @@ struct CameraView: View {
                             Image(systemName: "clock.arrow.circlepath")
                                 .foregroundColor(.white)
                         }
+                        .accessibilityIdentifier("historyButton")
                         
                         // Settings Button
                         Button(action: {
@@ -285,6 +290,7 @@ struct CameraView: View {
                             Image(systemName: "gearshape.fill")
                                 .foregroundColor(.white)
                         }
+                        .accessibilityIdentifier("settingsButton")
                     }
                     .padding(.horizontal)
                     .padding(.vertical, 8)
@@ -307,6 +313,7 @@ struct CameraView: View {
                             .frame(width: 50, height: 50)
                             .background(Circle().fill(Color.black.opacity(0.5)))
                     }
+                    .accessibilityIdentifier("switchCameraButton")
                     
                     // Record Toggle Button
                     Button(action: toggleRecording) {
@@ -324,6 +331,7 @@ struct CameraView: View {
                                     .font(.title2)
                             )
                     }
+                    .accessibilityIdentifier("recordButton")
                     
                     // Analytics Button
                     Button(action: {
@@ -337,6 +345,7 @@ struct CameraView: View {
                             .frame(width: 50, height: 50)
                             .background(Circle().fill(Color.black.opacity(0.5)))
                     }
+                    .accessibilityIdentifier("analyticsButton")
                 }
                 .padding(.bottom, 30)
             }

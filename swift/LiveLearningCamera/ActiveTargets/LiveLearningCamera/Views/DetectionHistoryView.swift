@@ -11,6 +11,7 @@ import CameraLearningModule
 
 struct DetectionHistoryView: View {
     @Environment(\.managedObjectContext) private var viewContext
+    @Environment(\.editMode) private var editMode
     @FetchRequest(
         sortDescriptors: [NSSortDescriptor(keyPath: \CapturedDetection.captureDate, ascending: false)],
         animation: .default
@@ -19,6 +20,7 @@ struct DetectionHistoryView: View {
     
     @State private var selectedClass: String? = nil
     @State private var showingStatistics = false
+    @State private var isEditing = false
     
     private let coreDataManager = CoreDataManager.shared
     
@@ -66,12 +68,22 @@ struct DetectionHistoryView: View {
                     Button(action: { showingStatistics.toggle() }) {
                         Image(systemName: "chart.bar.fill")
                     }
+                    .accessibilityIdentifier("statisticsButton")
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
+                    Button(action: {
+                        withAnimation {
+                            isEditing.toggle()
+                            editMode?.wrappedValue = isEditing ? .active : .inactive
+                        }
+                    }) {
+                        Text(isEditing ? "Done" : "Edit")
+                    }
+                    .accessibilityIdentifier("editButton")
                 }
             }
+            .environment(\.editMode, .constant(isEditing ? EditMode.active : EditMode.inactive))
         }
     }
     
@@ -89,8 +101,22 @@ struct DetectionHistoryView: View {
     
     private func deleteDetections(offsets: IndexSet) {
         withAnimation {
-            offsets.map { filteredDetections[$0] }.forEach(viewContext.delete)
-            coreDataManager.saveContext()
+            // Get the actual detections to delete
+            let detectionsToDelete = offsets.map { filteredDetections[$0] }
+            
+            // Delete each detection
+            for detection in detectionsToDelete {
+                viewContext.delete(detection)
+            }
+            
+            // Save context
+            do {
+                try viewContext.save()
+            } catch {
+                print("Error deleting detections: \(error)")
+                // Rollback if there's an error
+                viewContext.rollback()
+            }
         }
     }
 }
