@@ -10,14 +10,37 @@ class VisualFeatureExtractor {
     private let frameBuffer = FrameBuffer(capacity: 10)
     
     init() throws {
-        guard let modelURL = Bundle.main.url(forResource: "MobileViT", withExtension: "mlmodelc") else {
+        // Try to load MobileViT model - check for both compiled and package formats
+        var modelURL: URL?
+        
+        // First try mlpackage (newer format)
+        if let packageURL = Bundle.main.url(forResource: "MobileViT", withExtension: "mlpackage") {
+            modelURL = packageURL
+            print("VisualFeatureExtractor: Found MobileViT.mlpackage")
+        } 
+        // Then try compiled model
+        else if let compiledURL = Bundle.main.url(forResource: "MobileViT", withExtension: "mlmodelc") {
+            modelURL = compiledURL
+            print("VisualFeatureExtractor: Found MobileViT.mlmodelc")
+        }
+        
+        guard let finalURL = modelURL else {
+            print("VisualFeatureExtractor ERROR: MobileViT model not found in bundle")
             throw FeatureExtractionError.modelNotFound
         }
-        let model = try MLModel(contentsOf: modelURL)
-        self.featureExtractor = try VNCoreMLModel(for: model)
+        
+        do {
+            let model = try MLModel(contentsOf: finalURL)
+            self.featureExtractor = try VNCoreMLModel(for: model)
+            print("VisualFeatureExtractor: Successfully loaded MobileViT model")
+        } catch {
+            print("VisualFeatureExtractor ERROR: Failed to load model - \(error)")
+            throw error
+        }
     }
     
     func extractFeatures(from image: CGImage, boundingBox: CGRect) async throws -> FeatureVector {
+        print("VisualFeatureExtractor: Extracting features for box \(boundingBox)")
         guard let croppedImage = cropAndNormalize(image, to: boundingBox) else {
             throw FeatureExtractionError.preprocessingFailed
         }
@@ -32,11 +55,13 @@ class VisualFeatureExtractor {
                 guard let results = request.results as? [VNCoreMLFeatureValueObservation],
                       let firstResult = results.first,
                       let multiArray = firstResult.featureValue.multiArrayValue else {
+                    print("VisualFeatureExtractor ERROR: No valid results from model")
                     continuation.resume(throwing: FeatureExtractionError.extractionFailed)
                     return
                 }
                 
                 let features = self.multiArrayToVector(multiArray)
+                print("VisualFeatureExtractor: Extracted \(features.dimensions) features")
                 continuation.resume(returning: features)
             }
             

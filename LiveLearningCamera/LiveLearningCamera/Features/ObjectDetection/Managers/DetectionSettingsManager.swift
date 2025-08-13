@@ -62,7 +62,7 @@ class DetectionSettingsManager: ObservableObject {
         }
     }
     
-    @Published var enableHandTracking: Bool = false {
+    @Published var enableHandTracking: Bool = true {
         didSet {
             UserDefaults.standard.set(enableHandTracking, forKey: "enableHandTracking")
         }
@@ -80,7 +80,7 @@ class DetectionSettingsManager: ObservableObject {
         }
     }
     
-    @Published var showHandLandmarks: Bool = false {
+    @Published var showHandLandmarks: Bool = true {
         didSet {
             UserDefaults.standard.set(showHandLandmarks, forKey: "showHandLandmarks")
         }
@@ -96,10 +96,10 @@ class DetectionSettingsManager: ObservableObject {
         self.showFPS = UserDefaults.standard.object(forKey: "showFPS") as? Bool ?? true
         self.captureInterval = UserDefaults.standard.object(forKey: "captureInterval") as? TimeInterval ?? 1.0
         self.enableDeduplication = UserDefaults.standard.object(forKey: "enableDeduplication") as? Bool ?? true
-        self.enableHandTracking = UserDefaults.standard.object(forKey: "enableHandTracking") as? Bool ?? false
+        self.enableHandTracking = UserDefaults.standard.object(forKey: "enableHandTracking") as? Bool ?? true
         self.maxHandCount = UserDefaults.standard.object(forKey: "maxHandCount") as? Int ?? 2
         self.showHandGestures = UserDefaults.standard.object(forKey: "showHandGestures") as? Bool ?? true
-        self.showHandLandmarks = UserDefaults.standard.object(forKey: "showHandLandmarks") as? Bool ?? false
+        self.showHandLandmarks = UserDefaults.standard.object(forKey: "showHandLandmarks") as? Bool ?? true
         self.loadClassFilter()
     }
 }

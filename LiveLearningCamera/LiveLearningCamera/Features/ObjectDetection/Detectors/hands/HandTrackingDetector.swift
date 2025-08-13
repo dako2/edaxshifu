@@ -402,26 +402,43 @@ class HandGestureRecognizer {
 extension HandTrackingDetector {
     
     func detectWithTracking(in image: CIImage) async throws -> [HandTrackingResult] {
-        let detections = try await detect(in: image)
-        
-        // Convert back to hand detections for detailed tracking
-        guard let request = handPoseRequest,
-              let observations = request.results else {
-            return []
+        guard let request = handPoseRequest else {
+            throw DetectorError.modelNotLoaded
         }
         
-        let handDetections = processHandObservations(observations, imageSize: image.extent.size)
-        
-        // Add tracking information
-        return handDetections.map { hand in
-            let previousHand = previousHands[hand.chirality]
-            let movement = calculateMovement(current: hand, previous: previousHand)
+        // Perform hand detection directly
+        return try await withCheckedThrowingContinuation { continuation in
+            let handler = VNImageRequestHandler(ciImage: image, options: [:])
             
-            return HandTrackingResult(
-                detection: hand,
-                movement: movement,
-                isTracked: previousHand != nil
-            )
+            do {
+                try handler.perform([request])
+                
+                guard let observations = request.results else {
+                    continuation.resume(returning: [])
+                    return
+                }
+                
+                let handDetections = processHandObservations(observations, imageSize: image.extent.size)
+                
+                // Add tracking information
+                let results = handDetections.map { hand in
+                    let previousHand = previousHands[hand.chirality]
+                    let movement = calculateMovement(current: hand, previous: previousHand)
+                    
+                    // Update tracking state
+                    previousHands[hand.chirality] = hand
+                    
+                    return HandTrackingResult(
+                        detection: hand,
+                        movement: movement,
+                        isTracked: previousHand != nil
+                    )
+                }
+                
+                continuation.resume(returning: results)
+            } catch {
+                continuation.resume(throwing: error)
+            }
         }
     }
     

@@ -243,6 +243,7 @@ class MemoryTrackedObject {
     private var _confidence: Float
     private var _observationCount: Int = 1
     private var _tracker: KalmanTracker?
+    private var _thumbnail: Data?
     
     var lastSeen: Date {
         get {
@@ -309,13 +310,27 @@ class MemoryTrackedObject {
         }
     }
     
-    init(id: UUID, label: String, firstSeen: Date, lastSeen: Date, boundingBox: CGRect, confidence: Float) {
+    var thumbnail: Data? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _thumbnail
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            _thumbnail = newValue
+        }
+    }
+    
+    init(id: UUID, label: String, firstSeen: Date, lastSeen: Date, boundingBox: CGRect, confidence: Float, thumbnail: Data? = nil) {
         self.id = id
         self.label = label
         self.firstSeen = firstSeen
         self._lastSeen = lastSeen
         self._lastBoundingBox = boundingBox
         self._confidence = confidence
+        self._thumbnail = thumbnail
     }
 }
 

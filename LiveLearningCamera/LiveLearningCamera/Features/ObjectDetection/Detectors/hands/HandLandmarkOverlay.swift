@@ -15,7 +15,8 @@ struct HandLandmarkOverlay: View {
     @ObservedObject var settings = DetectionSettingsManager.shared
     
     var body: some View {
-        GeometryReader { geometry in
+        let _ = print("HandLandmarkOverlay: Rendering \(handDetections.count) hands")
+        return GeometryReader { geometry in
             ForEach(Array(handDetections.enumerated()), id: \.offset) { _, hand in
                 if settings.showHandLandmarks {
                     // Draw skeleton connections
@@ -337,19 +338,3 @@ extension HandGesture {
     }
 }
 
-// MARK: - Integration Helper
-extension OptimizedDetectionPipeline {
-    func extractHandDetections(from trackedObjects: [MemoryTrackedObject]) -> [HandTrackingResult] {
-        // Filter and convert hand detections
-        return trackedObjects.compactMap { object in
-            // Check if this is a hand detection (class index >= 100)
-            guard object.label.contains("Hand") || object.label.contains("Left") || object.label.contains("Right") else {
-                return nil
-            }
-            
-            // Convert to HandTrackingResult
-            // This would need proper mapping from the detection pipeline
-            return nil // Placeholder - needs proper implementation
-        }
-    }
-}

@@ -213,7 +213,8 @@ struct DetectionOverlay: View {
 // MARK: - Main Camera View
 struct CameraView: View {
     @StateObject private var cameraManager = CameraManager()
-    @StateObject private var detectionPipeline = OptimizedDetectionPipeline()
+    // Switch to MLPipeline - the main coordinator
+    @ObservedObject private var detectionPipeline = MLPipeline.shared
     @StateObject private var settings = DetectionSettingsManager.shared
     @State private var trackedObjects: [MemoryTrackedObject] = []
     @State private var handDetections: [HandTrackingResult] = []
