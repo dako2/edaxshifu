@@ -194,7 +194,7 @@ def run_hand_detection_mode(args):
 
 def run_web_interface(args):
     """Run the Gradio web interface."""
-    from unified_interface import UnifiedEdaxShifu
+    from edaxshifu.unified_interface import UnifiedEdaxShifu
     
     print("Starting Web Interface...")
     print(f"📹 Video source: {args.url}")

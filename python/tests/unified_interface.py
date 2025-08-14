@@ -21,11 +21,11 @@ from PIL import Image
 import threading
 import queue
 
-from python.edaxshifu.intelligent_capture import IntelligentCaptureSystem
-from python.edaxshifu.knn_classifier import AdaptiveKNNClassifier
-from python.edaxshifu.annotators import AnnotatorFactory, AnnotationRequest
-from python.edaxshifu.annotators.bbox_utils import draw_bounding_boxes, crop_object_from_bbox, crop_all_objects
-from python.edaxshifu.hand_detector import HandDetector
+from edaxshifu.intelligent_capture import IntelligentCaptureSystem
+from edaxshifu.knn_classifier import AdaptiveKNNClassifier
+from edaxshifu.annotators import AnnotatorFactory, AnnotationRequest
+from edaxshifu.annotators.bbox_utils import draw_bounding_boxes, crop_object_from_bbox, crop_all_objects
+from edaxshifu.hand_detector import HandDetector
 
 # Import distributed training (optional)
 try:
