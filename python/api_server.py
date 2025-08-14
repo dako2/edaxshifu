@@ -21,8 +21,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from python.edaxshifu.knn_classifier import AdaptiveKNNClassifier, Recognition
-from python.edaxshifu.logging_config import get_logger
+from edaxshifu.knn_classifier import AdaptiveKNNClassifier, Recognition
+from edaxshifu.logging_config import get_logger
 
 logger = get_logger("api_server")
 
