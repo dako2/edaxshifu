@@ -21,8 +21,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from python.edaxshifu.knn_classifier import AdaptiveKNNClassifier, Recognition
-from python.edaxshifu.logging_config import get_logger
+from edaxshifu.knn_classifier import AdaptiveKNNClassifier, Recognition
+from edaxshifu.logging_config import get_logger
 
 logger = get_logger("api_server")
 
@@ -124,7 +124,7 @@ class KNNAPIServer:
     def _load_ai_annotator(self):
         """Load the AI annotator for enhanced annotation features."""
         try:
-            from python.edaxshifu.annotators import AnnotatorFactory
+            from edaxshifu.annotators import AnnotatorFactory
             self.gemini_annotator = AnnotatorFactory.create_gemini_annotator()
             if self.gemini_annotator.is_available():
                 logger.info("AI annotator (Gemini) initialized and available")
@@ -329,7 +329,7 @@ class KNNAPIServer:
                 )
             
             try:
-                from python.edaxshifu.annotators import AnnotationRequest
+                from edaxshifu.annotators import AnnotationRequest
                 
                 image_data = base64.b64decode(request.image_base64)
                 image = Image.open(io.BytesIO(image_data))
@@ -384,7 +384,7 @@ class KNNAPIServer:
                 )
             
             try:
-                from python.edaxshifu.annotators import AnnotationRequest
+                from edaxshifu.annotators import AnnotationRequest
                 
                 results = []
                 successful = 0
