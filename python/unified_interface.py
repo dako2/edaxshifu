@@ -24,11 +24,11 @@ import requests
 import base64
 import io
 
-from src.intelligent_capture import IntelligentCaptureSystem
-from src.knn_classifier import AdaptiveKNNClassifier
-from src.annotators import AnnotatorFactory, AnnotationRequest
-from src.annotators.bbox_utils import draw_bounding_boxes, crop_object_from_bbox, crop_all_objects
-from src.hand_detector import HandDetector
+from edaxshifu.intelligent_capture import IntelligentCaptureSystem
+from edaxshifu.knn_classifier import AdaptiveKNNClassifier
+from edaxshifu.annotators import AnnotatorFactory, AnnotationRequest
+from edaxshifu.annotators.bbox_utils import draw_bounding_boxes, crop_object_from_bbox, crop_all_objects
+from edaxshifu.hand_detector import HandDetector
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
