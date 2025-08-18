@@ -22,6 +22,7 @@ import numpy as np
 from PIL import Image
 
 from edaxshifu.knn_classifier import AdaptiveKNNClassifier, Recognition
+from edaxshifu.sam2_detector import SAM2Detector
 from edaxshifu.logging_config import get_logger
 
 logger = get_logger("api_server")
@@ -47,8 +48,18 @@ class ModelStatsResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     model_loaded: bool
+    sam2_available: bool
     known_classes_count: int
     total_samples: int
+
+class SegmentationRequest(BaseModel):
+    image_base64: str
+    input_points: Optional[List[List[int]]] = None
+    input_labels: Optional[List[int]] = None
+
+class SegmentationResponse(BaseModel):
+    masks: List[Dict]
+    timestamp: str
 
 class AIAnnotationRequest(BaseModel):
     image_base64: str
@@ -78,11 +89,12 @@ class KNNAPIServer:
     def __init__(self, model_path: str = "models/knn_classifier.npz"):
         self.model_path = model_path
         self.knn_classifier = None
+        self.sam2_detector = None
         self.gemini_annotator = None
         self.app = FastAPI(
-            title="EdaxShifu KNN API",
-            description="REST API for KNN object recognition inference and AI annotation",
-            version="1.0.0"
+            title="EdaxShifu KNN API with SAM2 Support",
+            description="REST API for KNN object recognition inference, AI annotation, and SAM2 segmentation",
+            version="1.1.0"
         )
         
         self.app.add_middleware(
@@ -95,6 +107,7 @@ class KNNAPIServer:
         
         self._setup_routes()
         self._load_model()
+        self._load_sam2_detector()
         self._load_ai_annotator()
     
     def _load_model(self):
@@ -121,6 +134,15 @@ class KNNAPIServer:
             logger.debug(f"KNN initialization error details: {type(e).__name__}: {str(e)}")
             raise
     
+    def _load_sam2_detector(self):
+        """Load the SAM2 detector."""
+        try:
+            self.sam2_detector = SAM2Detector()
+            logger.info("SAM2 detector initialized")
+        except Exception as e:
+            logger.warning(f"Failed to load SAM2 detector: {e}")
+            self.sam2_detector = None
+    
     def _load_ai_annotator(self):
         """Load the AI annotator for enhanced annotation features."""
         try:
@@ -146,6 +168,7 @@ class KNNAPIServer:
                 return HealthResponse(
                     status="error",
                     model_loaded=False,
+                    sam2_available=self.sam2_detector is not None and self.sam2_detector.sam2_available,
                     known_classes_count=0,
                     total_samples=0
                 )
@@ -153,9 +176,109 @@ class KNNAPIServer:
             return HealthResponse(
                 status="healthy",
                 model_loaded=self.knn_classifier.trained,
+                sam2_available=self.sam2_detector is not None and self.sam2_detector.sam2_available,
                 known_classes_count=len(self.knn_classifier.get_known_classes()),
                 total_samples=len(self.knn_classifier.X_train) if self.knn_classifier.X_train is not None else 0
             )
+
+        @self.app.post("/predict/sam2", response_model=SegmentationResponse)
+        async def predict_sam2_image(request: SegmentationRequest):
+            """Predict segmentation from base64 encoded image."""
+            if self.sam2_detector is None or not self.sam2_detector.sam2_available:
+                raise HTTPException(status_code=503, detail="SAM2 model not available")
+            
+            try:
+                image_data = base64.b64decode(request.image_base64)
+                image = Image.open(io.BytesIO(image_data))
+                image_array = np.array(image)
+                
+                if len(image_array.shape) == 3 and image_array.shape[2] == 3:
+                    image_array = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
+                
+                input_points = None
+                input_labels = None
+                
+                if request.input_points:
+                    input_points = np.array(request.input_points)
+                if request.input_labels:
+                    input_labels = np.array(request.input_labels)
+                
+                results = self.sam2_detector.detect(image_array, input_points=input_points, input_labels=input_labels)
+                
+                serializable_results = []
+                for result in results:
+                    mask = result['mask']
+                    mask_coords = np.where(mask)
+                    serializable_results.append({
+                        'confidence': result['confidence'],
+                        'bbox': result['bbox'],
+                        'mask_coords': [mask_coords[0].tolist(), mask_coords[1].tolist()],
+                        'mask_shape': mask.shape,
+                        'mask_id': result.get('mask_id', 0)
+                    })
+                
+                return SegmentationResponse(
+                    masks=serializable_results,
+                    timestamp=datetime.now().isoformat()
+                )
+            except Exception as e:
+                logger.error(f"SAM2 prediction error: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/predict/sam2/upload")
+        async def predict_sam2_upload(
+            file: UploadFile = File(...),
+            input_points: Optional[str] = Form(None),
+            input_labels: Optional[str] = Form(None)
+        ):
+            """Predict segmentation from uploaded image file."""
+            if self.sam2_detector is None or not self.sam2_detector.sam2_available:
+                raise HTTPException(status_code=503, detail="SAM2 model not available")
+            
+            try:
+                contents = await file.read()
+                image = Image.open(io.BytesIO(contents))
+                image_array = np.array(image)
+                
+                if len(image_array.shape) == 3 and image_array.shape[2] == 3:
+                    image_array = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
+                
+                points = None
+                labels = None
+                
+                if input_points:
+                    try:
+                        points = np.array(eval(input_points))
+                    except:
+                        logger.warning("Failed to parse input_points")
+                
+                if input_labels:
+                    try:
+                        labels = np.array(eval(input_labels))
+                    except:
+                        logger.warning("Failed to parse input_labels")
+                
+                results = self.sam2_detector.detect(image_array, input_points=points, input_labels=labels)
+                
+                serializable_results = []
+                for result in results:
+                    mask = result['mask']
+                    mask_coords = np.where(mask)
+                    serializable_results.append({
+                        'confidence': result['confidence'],
+                        'bbox': result['bbox'],
+                        'mask_coords': [mask_coords[0].tolist(), mask_coords[1].tolist()],
+                        'mask_shape': mask.shape,
+                        'mask_id': result.get('mask_id', 0)
+                    })
+                
+                return SegmentationResponse(
+                    masks=serializable_results,
+                    timestamp=datetime.now().isoformat()
+                )
+            except Exception as e:
+                logger.error(f"SAM2 upload prediction error: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
         
         @self.app.post("/predict", response_model=PredictionResponse)
         async def predict_image(request: PredictionRequest):

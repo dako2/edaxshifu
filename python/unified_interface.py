@@ -26,6 +26,7 @@ import io
 
 from edaxshifu.intelligent_capture import IntelligentCaptureSystem
 from edaxshifu.knn_classifier import AdaptiveKNNClassifier
+from edaxshifu.sam2_detector import SAM2Detector
 from edaxshifu.annotators import AnnotatorFactory, AnnotationRequest
 from edaxshifu.annotators.bbox_utils import draw_bounding_boxes, crop_object_from_bbox, crop_all_objects
 from edaxshifu.hand_detector import HandDetector
@@ -75,6 +76,7 @@ class UnifiedEdaxShifu:
             'taught': 0,
             'annotations': 0,
             'ai_annotations': 0,
+            'sam2_segments': 0,
             'hands_detected': 0,
             'gestures_recognized': 0
         }
@@ -86,10 +88,14 @@ class UnifiedEdaxShifu:
             min_tracking_confidence=0.5
         )
         
+        # Initialize SAM2 detector
+        self.sam2_detector = SAM2Detector()
+        
         # Detection methods (what objects are)
         self.detection_modes = {
             'yolo': True,  # YOLO object detection
             'knn': True,   # KNN classification
+            'sam2': False, # SAM2 segmentation
         }
         
         # Triggers/Controls (actions to take)
@@ -191,32 +197,41 @@ class UnifiedEdaxShifu:
         
         # Detect hands if gesture triggers are enabled
         if self.triggers.get('hand_gestures', False):
-            hand_detections = self.hand_detector.detect_hands(frame)
+            hand_detections = self.hand_detector.detect(frame)
             
             # Draw hand landmarks
             for hand in hand_detections:
                 # Draw skeleton
-                self.hand_detector.draw_hand_landmarks(display_frame, hand)
+                self.hand_detector.draw_landmarks(display_frame, hand)
                 
                 # Recognize gesture
-                gesture = self.hand_detector.recognize_gesture(hand)
-                if gesture:
-                    self.stats['gestures_recognized'] += 1
-                    action = self.gesture_actions.get(gesture)
-                    
-                    # Display gesture info
-                    x, y, w, h = hand.bounding_box or (0, 0, 100, 100)
-                    cv2.putText(display_frame, f"{gesture} -> {action}", 
-                               (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 
-                               0.7, (255, 0, 255), 2)
-            
-            if hand_detections:
-                self.stats['hands_detected'] += len(hand_detections)
+                gesture = self.hand_detector.detect_gesture(hand)
         
         # Run YOLO detection if enabled
         detections = []
         if self.detection_modes.get('yolo', True):
             detections = self.system.yolo.detect(frame)
+        
+        # Run SAM2 segmentation if enabled
+        if self.detection_modes.get('sam2', False):
+            if detections:  # Use YOLO detections as prompts for SAM2
+                sam2_results = []
+                for det in detections:
+                    bbox = det.get('bbox', [])
+                    if len(bbox) == 4:
+                        x, y, w, h = bbox
+                        point_prompt = np.array([[x + w//2, y + h//2]])
+                        sam2_result = self.sam2_detector.detect(frame, input_points=point_prompt)
+                        sam2_results.extend(sam2_result)
+                
+                if sam2_results:
+                    display_frame = self.sam2_detector.draw_segmentation(display_frame, sam2_results)
+                    self.stats['sam2_segments'] = self.stats.get('sam2_segments', 0) + len(sam2_results)
+            else:
+                sam2_results = self.sam2_detector.detect(frame)
+                if sam2_results:
+                    display_frame = self.sam2_detector.draw_segmentation(display_frame, sam2_results)
+                    self.stats['sam2_segments'] = self.stats.get('sam2_segments', 0) + len(sam2_results)
         
         # If KNN is enabled but YOLO is not, run KNN on full frame
         if self.detection_modes.get('knn', True) and not self.detection_modes.get('yolo', True):
@@ -474,6 +489,7 @@ class UnifiedEdaxShifu:
 • Captures: {self.stats['captures']}
 • Taught: {self.stats['taught']}
 • AI annotations: {self.stats['ai_annotations']}
+• SAM2 segments: {self.stats.get('sam2_segments', 0)}
 • AI status: {ai_status}
 • Hands detected: {self.stats['hands_detected']}
 • Gestures: {self.stats['gestures_recognized']}
@@ -518,8 +534,9 @@ class UnifiedEdaxShifu:
                                 choices=[
                                     ("YOLO Object Detection", "yolo"),
                                     ("KNN Classification", "knn"),
+                                    ("SAM2 Segmentation", "sam2"),
                                 ],
-                                value=["yolo", "knn"],  # Default: both enabled
+                                value=["yolo", "knn"],
                                 label="Object Detection",
                                 info="How to identify objects"
                             )
@@ -707,6 +724,7 @@ class UnifiedEdaxShifu:
                 """Update active detection methods."""
                 self.detection_modes['yolo'] = 'yolo' in selected_modes
                 self.detection_modes['knn'] = 'knn' in selected_modes
+                self.detection_modes['sam2'] = 'sam2' in selected_modes
                 
                 active = [m.upper() for m in selected_modes]
                 status = f"🔍 Detection: {', '.join(active)}" if active else "⚠️ No detection enabled"
